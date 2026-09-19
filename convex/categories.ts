@@ -90,3 +90,39 @@ export const deleteCustom = mutation({
     return args.id;
   },
 });
+
+/**
+ * Update a category (name, icon, color, type).
+ */
+export const update = mutation({
+  args: {
+    id: v.id("categories"),
+    name: v.optional(v.string()),
+    type: v.optional(v.union(v.literal("expense"), v.literal("income"))),
+    icon: v.optional(v.string()),
+    color: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await getAuthenticatedUser(ctx);
+
+    const category = await ctx.db.get(args.id);
+    if (!category) {
+      throw new Error("Category not found.");
+    }
+
+    const updates: {
+      name?: string;
+      type?: "expense" | "income";
+      icon?: string;
+      color?: string;
+    } = {};
+    if (args.name !== undefined) updates.name = args.name.trim();
+    if (args.type !== undefined) updates.type = args.type;
+    if (args.icon !== undefined) updates.icon = args.icon.trim() || "Tag";
+    if (args.color !== undefined) updates.color = args.color.trim() || "#6366F1";
+
+    await ctx.db.patch(args.id, updates);
+    return args.id;
+  },
+});
+

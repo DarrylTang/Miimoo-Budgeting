@@ -89,17 +89,14 @@ export function CardEditorModal({
     'Shopping',
   ]);
   const [isDefault, setIsDefault] = useState(false);
-  const [isUnlimitedMax, setIsUnlimitedMax] = useState(false);
 
   useEffect(() => {
     if (cardToEdit) {
       setName(cardToEdit.name);
       const theme = (cardToEdit.colorTheme || cardToEdit.cardColor || 'obsidian') as CardColorTheme;
       setColorTheme(theme);
-      const limit = cardToEdit.maxLimit ?? cardToEdit.maxSpendLimit ?? 3000;
-      const isUnlimited = cardToEdit.isUnlimitedMax || limit === 0;
-      setIsUnlimitedMax(!!isUnlimited);
-      setMaxLimit(isUnlimited ? '3000' : limit.toString());
+      const limit = cardToEdit.maxLimit ?? cardToEdit.maxSpendLimit ?? 0;
+      setMaxLimit(limit.toString());
       const min = cardToEdit.minSpend ?? cardToEdit.minSpendRequirement ?? 600;
       setMinSpend(min.toString());
       const cycle = cardToEdit.billingCycleDay ?? cardToEdit.billingCycleStartDay ?? 1;
@@ -109,8 +106,7 @@ export function CardEditorModal({
     } else {
       setName('');
       setColorTheme('obsidian');
-      setIsUnlimitedMax(false);
-      setMaxLimit('3000');
+      setMaxLimit('0'); // Default to 0 (Unlimited)
       setMinSpend('600');
       setBillingCycleDay(1);
       setRewardCategories(['Food', 'Shopping', 'Entertainment']);
@@ -128,8 +124,13 @@ export function CardEditorModal({
     }
   };
 
+  const numericMaxLimit = parseFloat(maxLimit) || 0;
+  const isUnlimitedMax = maxLimit.trim() === '0' || (maxLimit.trim() !== '' && numericMaxLimit <= 0);
+
   const handleSave = () => {
-    const parsedLimit = isUnlimitedMax ? 0 : (parseFloat(maxLimit) || 0);
+    const parsedLimit = parseFloat(maxLimit) || 0;
+    const isUnlimited = parsedLimit <= 0;
+    const finalLimit = isUnlimited ? 0 : parsedLimit;
     const parsedMin = parseFloat(minSpend) || 0;
     const cleanName = name.trim() || 'Credit Card';
 
@@ -137,9 +138,9 @@ export function CardEditorModal({
       name: cleanName,
       cardColor: colorTheme,
       colorTheme,
-      maxSpendLimit: parsedLimit,
-      maxLimit: parsedLimit,
-      isUnlimitedMax,
+      maxSpendLimit: finalLimit,
+      maxLimit: finalLimit,
+      isUnlimitedMax: isUnlimited,
       minSpendRequirement: parsedMin,
       minSpend: parsedMin,
       billingCycleStartDay: billingCycleDay,
@@ -219,9 +220,9 @@ export function CardEditorModal({
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#10B981]/30 backdrop-blur-md text-[#A7F3D0] border border-[#10B981]/40">
                     Limit: Unlimited ∞
                   </span>
-                ) : maxLimit ? (
+                ) : numericMaxLimit > 0 ? (
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/15 backdrop-blur-md text-white/90 border border-white/20">
-                    Limit: ${parseFloat(maxLimit || '0').toLocaleString()}
+                    Limit: ${numericMaxLimit.toLocaleString()}
                   </span>
                 ) : null}
 
@@ -341,38 +342,36 @@ export function CardEditorModal({
                 <label className="text-xs font-bold text-[#718096]">
                   Max Spend Limit ($)
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setIsUnlimitedMax((prev) => !prev)}
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all flex items-center gap-1 ${
-                    isUnlimitedMax
-                      ? 'bg-[#10B981] text-white shadow-2xs'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                  }`}
-                  title="Toggle unlimited spending limit"
-                >
-                  <span>{isUnlimitedMax ? 'Unlimited ∞' : 'Set Unlimited'}</span>
-                </button>
+                {isUnlimitedMax ? (
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#0D9488] border border-[#10B981]/30">
+                    Unlimited ∞
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-400 font-medium">
+                    $0 = Unlimited
+                  </span>
+                )}
               </div>
 
-              {isUnlimitedMax ? (
-                <div className="w-full px-3.5 py-2.5 bg-[#E8F8F5] border border-[#10B981]/40 rounded-xl text-xs font-bold text-[#0D9488] flex items-center justify-between shadow-2xs">
-                  <span>No Limit (Unlimited)</span>
-                  <span className="text-sm font-mono">∞</span>
-                </div>
-              ) : (
+              <div className="relative">
                 <input
                   type="number"
                   step="100"
                   min="0"
-                  placeholder="3000"
+                  placeholder="0 for unlimited"
                   value={maxLimit}
                   onChange={(e) => setMaxLimit(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-[#2D3748] outline-hidden focus:border-[#F46C6C]"
+                  className={`w-full px-3.5 py-2.5 bg-gray-50 border rounded-xl text-xs font-semibold text-[#2D3748] outline-hidden transition-all ${
+                    isUnlimitedMax
+                      ? 'border-[#10B981]/50 focus:border-[#10B981] bg-[#F0FDF4]/30'
+                      : 'border-gray-200 focus:border-[#F46C6C]'
+                  }`}
                 />
-              )}
-              <span className="text-[10px] text-gray-400 mt-0.5 block">
-                {isUnlimitedMax ? 'No monthly spending cap' : 'Credit line / budget cap'}
+              </div>
+              <span className="text-[10px] text-gray-400 mt-1 block">
+                {isUnlimitedMax
+                  ? 'Set to $0: Unlimited (no monthly spending cap)'
+                  : 'Type 0 for unlimited, or enter spending cap'}
               </span>
             </div>
           </div>

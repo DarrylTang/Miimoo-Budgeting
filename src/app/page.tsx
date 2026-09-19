@@ -8,6 +8,7 @@ import { AnalyticsView } from '@/components/AnalyticsView';
 import { CardsView } from '@/components/CardsView';
 import { NewEntryModal } from '@/components/NewEntryModal';
 import { ManageAccountsModal } from '@/components/ManageAccountsModal';
+import { ManageCategoriesModal } from '@/components/ManageCategoriesModal';
 import { RecurringModal } from '@/components/RecurringModal';
 import { DataCenterModal } from '@/components/DataCenterModal';
 import { QAHelpModal } from '@/components/QAHelpModal';
@@ -23,6 +24,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNewEntryOpen, setIsNewEntryOpen] = useState(false);
   const [isAccountsOpen, setIsAccountsOpen] = useState(false);
+  const [isCategoriesOpen, setIsCategoriesOpen] = useState(false);
   const [isRecurringOpen, setIsRecurringOpen] = useState(false);
   const [isDataCenterOpen, setIsDataCenterOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -92,6 +94,7 @@ export default function App() {
         onClose={() => setIsDrawerOpen(false)}
         onOpenAccounts={() => setIsAccountsOpen(true)}
         onOpenRecurring={() => setIsRecurringOpen(true)}
+        onOpenCategories={() => setIsCategoriesOpen(true)}
         onOpenDataCenter={() => setIsDataCenterOpen(true)}
         onOpenHelp={() => setIsHelpOpen(true)}
       />
@@ -107,6 +110,12 @@ export default function App() {
       <ManageAccountsModal
         isOpen={isAccountsOpen}
         onClose={() => setIsAccountsOpen(false)}
+      />
+
+      {/* Manage Categories Modal */}
+      <ManageCategoriesModal
+        isOpen={isCategoriesOpen}
+        onClose={() => setIsCategoriesOpen(false)}
       />
 
       {/* Recurring Rules Modal */}

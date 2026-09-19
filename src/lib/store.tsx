@@ -178,6 +178,9 @@ interface BudgetContextType extends BudgetState {
   toggleRecurringRule: (id: string) => void;
   deleteRecurringRule: (id: string) => void;
   addCategory: (cat: Omit<CategoryItem, 'id'>) => void;
+  updateCategory: (id: string, cat: Partial<CategoryItem>) => void;
+  deleteCategory: (id: string) => void;
+  resetCategoriesToDefault: () => void;
   toggleBalanceHidden: () => void;
   setSelectedAccountId: (id: string) => void;
   setUserName: (name: string) => void;
@@ -400,6 +403,34 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     setCategories(prev => [...prev, { ...cat, id }]);
   }, []);
 
+  const updateCategory = useCallback((id: string, updates: Partial<CategoryItem>) => {
+    setCategories(prev => {
+      const oldCat = prev.find(c => c.id === id);
+      const newName = updates.name?.trim();
+      const oldName = oldCat?.name;
+
+      // If category name changed, cascade to transactions, recurring rules, and cards
+      if (oldName && newName && oldName !== newName) {
+        setTransactions(txs => txs.map(tx => tx.category === oldName ? { ...tx, category: newName } : tx));
+        setRecurring(recs => recs.map(rec => rec.category === oldName ? { ...rec, category: newName } : rec));
+        setCards(crds => crds.map(crd => ({
+          ...crd,
+          rewardCategories: crd.rewardCategories.map(rCat => rCat === oldName ? newName : rCat),
+        })));
+      }
+
+      return prev.map(c => c.id === id ? { ...c, ...updates, ...(newName ? { name: newName } : {}) } : c);
+    });
+  }, []);
+
+  const deleteCategory = useCallback((id: string) => {
+    setCategories(prev => prev.filter(c => c.id !== id));
+  }, []);
+
+  const resetCategoriesToDefault = useCallback(() => {
+    setCategories(DEFAULT_CATEGORIES);
+  }, []);
+
   const toggleBalanceHidden = useCallback(() => {
     setIsBalanceHidden(prev => !prev);
   }, []);
@@ -508,6 +539,9 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     toggleRecurringRule,
     deleteRecurringRule,
     addCategory,
+    updateCategory,
+    deleteCategory,
+    resetCategoriesToDefault,
     toggleBalanceHidden,
     setSelectedAccountId,
     setUserName,

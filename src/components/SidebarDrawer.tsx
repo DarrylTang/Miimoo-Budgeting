@@ -14,6 +14,7 @@ import {
   EyeOff,
   ChevronRight,
   ShieldCheck,
+  Tag,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 
@@ -22,6 +23,7 @@ interface SidebarDrawerProps {
   onClose: () => void;
   onOpenAccounts: () => void;
   onOpenRecurring: () => void;
+  onOpenCategories: () => void;
   onOpenDataCenter: () => void;
   onOpenHelp: () => void;
 }
@@ -31,6 +33,7 @@ export function SidebarDrawer({
   onClose,
   onOpenAccounts,
   onOpenRecurring,
+  onOpenCategories,
   onOpenDataCenter,
   onOpenHelp,
 }: SidebarDrawerProps) {
@@ -43,6 +46,7 @@ export function SidebarDrawer({
     toggleBalanceHidden,
     accounts,
     transactions,
+    categories,
   } = useBudget();
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -193,6 +197,26 @@ export function SidebarDrawer({
                   <Repeat className="w-4 h-4" />
                 </div>
                 <span className="font-semibold text-sm text-[#2D3748]">Recurring Rules</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </button>
+
+            {/* Entry Categories */}
+            <button
+              onClick={() => {
+                onClose();
+                onOpenCategories();
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#F97316]">
+                  <Tag className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-semibold text-sm text-[#2D3748] block">Entry Categories</span>
+                  <span className="text-[11px] text-gray-400">{categories.length} categories</span>
+                </div>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400" />
             </button>
