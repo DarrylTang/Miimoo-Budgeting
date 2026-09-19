@@ -238,7 +238,22 @@ export function CardsView() {
                   )}
 
                   {/* Spend Progress vs Max Spend Limit */}
-                  {maxLimit > 0 && (
+                  {card.isUnlimitedMax || maxLimit <= 0 ? (
+                    <div className="mb-3 relative z-10 bg-black/20 backdrop-blur-md rounded-2xl p-2.5 border border-white/10">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/80 font-semibold text-[11px]">
+                          Monthly Limit:
+                        </span>
+                        <span className="inline-flex items-center gap-1 font-bold text-[11px] text-[#A7F3D0] bg-[#10B981]/25 px-2 py-0.5 rounded-md border border-[#10B981]/40">
+                          <span>Unlimited ∞</span>
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-white/70 mt-1 flex justify-between">
+                        <span>Spent this cycle: ${spend.toFixed(2)}</span>
+                        <span className="text-white/80 font-semibold">No spending cap</span>
+                      </div>
+                    </div>
+                  ) : (
                     <div className="mb-3 relative z-10 bg-black/20 backdrop-blur-md rounded-2xl p-2.5 border border-white/10">
                       <div className="flex items-center justify-between text-xs mb-1.5">
                         <span className="text-white/80 font-semibold text-[11px]">

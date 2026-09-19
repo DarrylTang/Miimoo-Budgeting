@@ -109,6 +109,7 @@ export const create = mutation({
     billingCycleStartDay: v.number(),
     rewardCategories: v.array(v.string()),
     isDefault: v.boolean(),
+    isUnlimitedMax: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await getAuthenticatedUser(ctx);
@@ -135,6 +136,7 @@ export const create = mutation({
       billingCycleStartDay: args.billingCycleStartDay,
       rewardCategories: args.rewardCategories,
       isDefault: args.isDefault,
+      isUnlimitedMax: args.isUnlimitedMax,
     });
 
     return cardId;
@@ -154,6 +156,7 @@ export const update = mutation({
     billingCycleStartDay: v.optional(v.number()),
     rewardCategories: v.optional(v.array(v.string())),
     isDefault: v.optional(v.boolean()),
+    isUnlimitedMax: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await getAuthenticatedUser(ctx);
@@ -190,6 +193,7 @@ export const update = mutation({
       billingCycleStartDay?: number;
       rewardCategories?: string[];
       isDefault?: boolean;
+      isUnlimitedMax?: boolean;
     } = {};
 
     if (args.name !== undefined) patchData.name = args.name.trim();
@@ -202,6 +206,7 @@ export const update = mutation({
     if (args.rewardCategories !== undefined)
       patchData.rewardCategories = args.rewardCategories;
     if (args.isDefault !== undefined) patchData.isDefault = args.isDefault;
+    if (args.isUnlimitedMax !== undefined) patchData.isUnlimitedMax = args.isUnlimitedMax;
 
     await ctx.db.patch(args.id, patchData);
     return args.id;

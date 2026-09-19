@@ -21,8 +21,9 @@ export interface CreditCard {
   name: string;
   cardColor: string; // gradient or theme key e.g. 'obsidian' | 'coral' | 'emerald' | 'ocean' | 'purple'
   colorTheme?: CardColorTheme;
-  maxSpendLimit: number; // e.g. 2500
+  maxSpendLimit: number; // e.g. 2500, or 0 for unlimited
   maxLimit?: number;
+  isUnlimitedMax?: boolean;
   minSpendRequirement: number; // e.g. 600
   minSpend?: number;
   billingCycleStartDay: number; // 1-31, default 1

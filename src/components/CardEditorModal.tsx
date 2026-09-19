@@ -89,6 +89,7 @@ export function CardEditorModal({
     'Shopping',
   ]);
   const [isDefault, setIsDefault] = useState(false);
+  const [isUnlimitedMax, setIsUnlimitedMax] = useState(false);
 
   useEffect(() => {
     if (cardToEdit) {
@@ -96,7 +97,9 @@ export function CardEditorModal({
       const theme = (cardToEdit.colorTheme || cardToEdit.cardColor || 'obsidian') as CardColorTheme;
       setColorTheme(theme);
       const limit = cardToEdit.maxLimit ?? cardToEdit.maxSpendLimit ?? 3000;
-      setMaxLimit(limit.toString());
+      const isUnlimited = cardToEdit.isUnlimitedMax || limit === 0;
+      setIsUnlimitedMax(!!isUnlimited);
+      setMaxLimit(isUnlimited ? '3000' : limit.toString());
       const min = cardToEdit.minSpend ?? cardToEdit.minSpendRequirement ?? 600;
       setMinSpend(min.toString());
       const cycle = cardToEdit.billingCycleDay ?? cardToEdit.billingCycleStartDay ?? 1;
@@ -106,6 +109,7 @@ export function CardEditorModal({
     } else {
       setName('');
       setColorTheme('obsidian');
+      setIsUnlimitedMax(false);
       setMaxLimit('3000');
       setMinSpend('600');
       setBillingCycleDay(1);
@@ -125,7 +129,7 @@ export function CardEditorModal({
   };
 
   const handleSave = () => {
-    const parsedLimit = parseFloat(maxLimit) || 0;
+    const parsedLimit = isUnlimitedMax ? 0 : (parseFloat(maxLimit) || 0);
     const parsedMin = parseFloat(minSpend) || 0;
     const cleanName = name.trim() || 'Credit Card';
 
@@ -135,6 +139,7 @@ export function CardEditorModal({
       colorTheme,
       maxSpendLimit: parsedLimit,
       maxLimit: parsedLimit,
+      isUnlimitedMax,
       minSpendRequirement: parsedMin,
       minSpend: parsedMin,
       billingCycleStartDay: billingCycleDay,
@@ -209,11 +214,23 @@ export function CardEditorModal({
                 <Wifi className="w-4 h-4 text-white/70 rotate-90" />
               </div>
 
-              {isDefault && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 backdrop-blur-md text-white border border-white/30">
-                  DEFAULT
-                </span>
-              )}
+              <div className="flex items-center gap-1.5">
+                {isUnlimitedMax ? (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#10B981]/30 backdrop-blur-md text-[#A7F3D0] border border-[#10B981]/40">
+                    Limit: Unlimited ∞
+                  </span>
+                ) : maxLimit ? (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/15 backdrop-blur-md text-white/90 border border-white/20">
+                    Limit: ${parseFloat(maxLimit || '0').toLocaleString()}
+                  </span>
+                ) : null}
+
+                {isDefault && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/20 backdrop-blur-md text-white border border-white/30">
+                    DEFAULT
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Card Name */}
@@ -320,20 +337,42 @@ export function CardEditorModal({
             </div>
 
             <div>
-              <label className="text-xs font-bold text-[#718096] block mb-1">
-                Max Spend Limit ($)
-              </label>
-              <input
-                type="number"
-                step="100"
-                min="0"
-                placeholder="3000"
-                value={maxLimit}
-                onChange={(e) => setMaxLimit(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-[#2D3748] outline-hidden focus:border-[#F46C6C]"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-[#718096]">
+                  Max Spend Limit ($)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsUnlimitedMax((prev) => !prev)}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all flex items-center gap-1 ${
+                    isUnlimitedMax
+                      ? 'bg-[#10B981] text-white shadow-2xs'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                  }`}
+                  title="Toggle unlimited spending limit"
+                >
+                  <span>{isUnlimitedMax ? 'Unlimited ∞' : 'Set Unlimited'}</span>
+                </button>
+              </div>
+
+              {isUnlimitedMax ? (
+                <div className="w-full px-3.5 py-2.5 bg-[#E8F8F5] border border-[#10B981]/40 rounded-xl text-xs font-bold text-[#0D9488] flex items-center justify-between shadow-2xs">
+                  <span>No Limit (Unlimited)</span>
+                  <span className="text-sm font-mono">∞</span>
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  step="100"
+                  min="0"
+                  placeholder="3000"
+                  value={maxLimit}
+                  onChange={(e) => setMaxLimit(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-[#2D3748] outline-hidden focus:border-[#F46C6C]"
+                />
+              )}
               <span className="text-[10px] text-gray-400 mt-0.5 block">
-                Credit line / budget cap
+                {isUnlimitedMax ? 'No monthly spending cap' : 'Credit line / budget cap'}
               </span>
             </div>
           </div>

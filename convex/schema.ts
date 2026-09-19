@@ -33,6 +33,7 @@ export default defineSchema({
     billingCycleStartDay: v.number(),
     rewardCategories: v.array(v.string()),
     isDefault: v.boolean(),
+    isUnlimitedMax: v.optional(v.boolean()),
   }).index("by_isDefault", ["isDefault"]),
 
   // Transactions
