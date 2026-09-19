@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ChevronDown,
   Settings,
-  Lock,
   Eye,
   EyeOff,
   SlidersHorizontal,
@@ -216,12 +215,6 @@ export function HomeDashboard({
               className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-[#2D3748] hover:bg-gray-100 transition-colors"
             >
               <Settings className="w-3.5 h-3.5" />
-            </button>
-            <button
-              aria-label="Privacy Lock"
-              className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-[#2D3748] hover:bg-gray-100 transition-colors"
-            >
-              <Lock className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={toggleBalanceHidden}

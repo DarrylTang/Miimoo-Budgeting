@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 import { CategoryIcon } from '@/components/CategoryIcon';
+import { RecurringRule } from '@/types';
 
 interface RecurringModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
   } = useBudget();
 
   const [isAdding, setIsAdding] = useState(false);
+  const [ruleToDelete, setRuleToDelete] = useState<RecurringRule | null>(null);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<'expense' | 'income'>('expense');
@@ -158,8 +160,9 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
                           </span>
                           <button
                             type="button"
-                            onClick={() => deleteRecurringRule(rule.id)}
+                            onClick={() => setRuleToDelete(rule)}
                             className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                            title="Delete recurring rule"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -284,6 +287,47 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {ruleToDelete && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 select-none">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => setRuleToDelete(null)}
+          />
+          <div className="relative bg-white rounded-3xl p-5 max-w-xs w-full shadow-2xl z-10 space-y-3 text-center animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-[#FFF0F0] text-[#F46C6C] flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="font-bold text-sm text-[#2D3748]">Delete Recurring Rule?</h3>
+            <p className="text-xs text-[#718096]">
+              Are you sure you want to delete <strong>&ldquo;{ruleToDelete.title}&rdquo;</strong>?
+            </p>
+            <div className="p-2.5 bg-[#E8F8F5] rounded-xl text-[11px] text-[#2C5E6E] text-left font-medium">
+              ✓ All previously created transactions from this recurring rule will be kept in your history.
+            </div>
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRuleToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-bold text-xs hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteRecurringRule(ruleToDelete.id);
+                  setRuleToDelete(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-[#F46C6C] text-white font-bold text-xs hover:bg-[#E05A5A] transition-colors"
+              >
+                Delete Rule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

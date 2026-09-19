@@ -42,6 +42,26 @@ export function ManageAccountsModal({ isOpen, onClose }: ManageAccountsModalProp
   const [transferAmount, setTransferAmount] = useState('');
   const [transferNote, setTransferNote] = useState('');
 
+  // Account rename state
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editingAccountName, setEditingAccountName] = useState('');
+
+  const handleStartEditName = (acc: Account) => {
+    setEditingAccountId(acc.id);
+    setEditingAccountName(acc.name);
+  };
+
+  const handleSaveEditName = (accId: string) => {
+    if (editingAccountName.trim()) {
+      updateAccount(accId, { name: editingAccountName.trim() });
+    }
+    setEditingAccountId(null);
+  };
+
+  const handleCancelEditName = () => {
+    setEditingAccountId(null);
+  };
+
   if (!isOpen) return null;
 
   const handleCreateAccount = () => {
@@ -151,12 +171,60 @@ export function ManageAccountsModal({ isOpen, onClose }: ManageAccountsModalProp
                       <div className="w-11 h-11 rounded-2xl bg-gray-50 flex items-center justify-center shadow-2xs">
                         {getAccountIcon(acc.type)}
                       </div>
-                      <div>
-                        <h4 className="font-bold text-sm text-[#2D3748]">{acc.name}</h4>
-                        <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
-                          {acc.type} • {acc.currency}
-                        </span>
-                      </div>
+                      {editingAccountId === acc.id ? (
+                        <div className="flex-1 min-w-0 mr-2">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={editingAccountName}
+                              onChange={(e) => setEditingAccountName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveEditName(acc.id);
+                                if (e.key === 'Escape') handleCancelEditName();
+                              }}
+                              autoFocus
+                              className="px-2 py-1 bg-gray-50 border border-[#F46C6C] rounded-lg text-xs font-bold text-[#2D3748] outline-hidden w-full max-w-[170px]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditName(acc.id)}
+                              className="p-1 rounded-md bg-[#58B5A7] text-white hover:bg-[#4EABA0] transition-colors"
+                              title="Save Name"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEditName}
+                              className="p-1 rounded-md bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                              title="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider block mt-0.5">
+                            {acc.type} • {acc.currency}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-bold text-sm text-[#2D3748]">{acc.name}</h4>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditName(acc)}
+                              className="p-1 text-gray-400 hover:text-[#F46C6C] hover:bg-gray-100 rounded-md transition-colors"
+                              title="Edit Account Name"
+                              aria-label={`Edit ${acc.name} name`}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
+                            {acc.type} • {acc.currency}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-3">

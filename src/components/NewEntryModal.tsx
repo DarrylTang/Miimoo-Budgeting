@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ArrowRightLeft,
   DollarSign,
+  Calculator,
+  Delete,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 import { CategoryIcon } from '@/components/CategoryIcon';
@@ -18,6 +20,22 @@ interface NewEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingTransaction?: Transaction | null;
+}
+
+// Safe expression evaluator for simple calculator calculations
+function evaluateExpression(expr: string): number | null {
+  try {
+    const sanitized = expr.replace(/×/g, '*').replace(/÷/g, '/');
+    if (!/^[0-9+\-*/().\s]+$/.test(sanitized)) return null;
+    const fn = new Function(`"use strict"; return (${sanitized});`);
+    const val = fn();
+    if (typeof val === 'number' && !isNaN(val) && isFinite(val)) {
+      return Math.round(val * 100) / 100;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export function NewEntryModal({
@@ -33,6 +51,7 @@ export function NewEntryModal({
     updateTransaction,
     transferMoney,
     addCategory,
+    selectedAccountId: activeAccountId,
   } = useBudget();
 
   // Form states
@@ -43,6 +62,11 @@ export function NewEntryModal({
   const [toAccountId, setToAccountId] = useState(accounts[1]?.id || 'acc-overseas');
   const [dateStr, setDateStr] = useState('2026-09-19');
   const [memo, setMemo] = useState('');
+
+  // Calculator state
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [calcExpression, setCalcExpression] = useState('');
+  const [calcPreview, setCalcPreview] = useState<number | null>(null);
 
   // Add category mini dialog state
   const [isAddingCategory, setIsAddingCategory] = useState(false);
@@ -60,16 +84,28 @@ export function NewEntryModal({
       }
       setDateStr(editingTransaction.date);
       setMemo(editingTransaction.memo || '');
+      setIsCalculatorOpen(false);
     } else {
       setType('expense');
       setAmountStr('0');
       setSelectedCategory('Food');
-      setSelectedAccountId(accounts[0]?.id || 'acc-main');
-      setToAccountId(accounts[1]?.id || 'acc-overseas');
+
+      // Default to currently selected account in dashboard/accounts view
+      const defaultAcc = activeAccountId && activeAccountId !== 'all'
+        ? (accounts.find(a => a.id === activeAccountId)?.id || accounts[0]?.id || 'acc-main')
+        : (accounts[0]?.id || 'acc-main');
+
+      setSelectedAccountId(defaultAcc);
+      const otherAcc = accounts.find(a => a.id !== defaultAcc)?.id || accounts[1]?.id || 'acc-overseas';
+      setToAccountId(otherAcc);
+
       setDateStr('2026-09-19'); // Default to Sep 19, 2026 matching screenshots
       setMemo('');
+      setIsCalculatorOpen(false);
+      setCalcExpression('');
+      setCalcPreview(null);
     }
-  }, [editingTransaction, isOpen, accounts]);
+  }, [editingTransaction, isOpen, accounts, activeAccountId]);
 
   if (!isOpen) return null;
 
@@ -101,6 +137,48 @@ export function NewEntryModal({
       const parts = amountStr.split('.');
       if (parts[1] && parts[1].length >= 2) return;
       setAmountStr(amountStr + val);
+    }
+  };
+
+  // Calculator Handlers
+  const handleToggleCalculator = () => {
+    if (!isCalculatorOpen && parsedAmount > 0) {
+      setCalcExpression(amountStr);
+      setCalcPreview(null);
+    }
+    setIsCalculatorOpen((prev) => !prev);
+  };
+
+  const handleCalcButton = (val: string) => {
+    if (val === 'C') {
+      setCalcExpression('');
+      setCalcPreview(null);
+      return;
+    }
+    if (val === 'DEL') {
+      const next = calcExpression.slice(0, -1);
+      setCalcExpression(next);
+      setCalcPreview(evaluateExpression(next));
+      return;
+    }
+    if (val === '=') {
+      const result = evaluateExpression(calcExpression);
+      if (result !== null) {
+        setCalcExpression(result.toString());
+        setCalcPreview(null);
+      }
+      return;
+    }
+    const next = calcExpression + val;
+    setCalcExpression(next);
+    setCalcPreview(evaluateExpression(next));
+  };
+
+  const handleApplyCalcToEntry = () => {
+    const result = evaluateExpression(calcExpression) ?? (parseFloat(calcExpression) || null);
+    if (result !== null && result >= 0) {
+      setAmountStr(result.toString());
+      setIsCalculatorOpen(false);
     }
   };
 
@@ -264,6 +342,212 @@ export function NewEntryModal({
                 }`}
               />
             </div>
+          </div>
+
+          {/* Above Categories: Calculator Feature */}
+          <div className="pt-1">
+            <div className="flex items-center justify-between mb-1.5 px-0.5">
+              <button
+                type="button"
+                onClick={handleToggleCalculator}
+                className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all active:scale-95 ${
+                  isCalculatorOpen
+                    ? 'bg-[#58B5A7] text-white shadow-xs'
+                    : 'bg-[#E8F8F5] text-[#3D9488] hover:bg-[#d5f3ee]'
+                }`}
+                title="Open Calculator"
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>{isCalculatorOpen ? 'Close Calculator' : 'Calculator'}</span>
+              </button>
+              {isCalculatorOpen && (
+                <span className="text-[10px] font-semibold text-gray-400">
+                  Tap = to solve, or Add to Entry
+                </span>
+              )}
+            </div>
+
+            {/* Interactive Calculator Panel */}
+            {isCalculatorOpen && (
+              <div className="mb-3 bg-[#F8F9FB] rounded-2xl p-3 border border-gray-200/80 space-y-2.5 animate-in fade-in zoom-in-95 duration-150 shadow-xs">
+                {/* Display */}
+                <div className="bg-white rounded-xl p-2.5 border border-gray-200 text-right shadow-2xs">
+                  <div className="text-xs font-mono text-gray-400 min-h-[16px] truncate">
+                    {calcExpression || '0'}
+                  </div>
+                  <div className="text-lg font-mono font-bold text-[#2D3748]">
+                    {calcPreview !== null ? `= $${calcPreview.toFixed(2)}` : (calcExpression ? `$${calcExpression}` : '$0.00')}
+                  </div>
+                </div>
+
+                {/* Keypad */}
+                <div className="grid grid-cols-4 gap-1.5 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('C')}
+                    className="py-2.5 rounded-xl bg-[#FFF0F0] text-[#F46C6C] hover:bg-[#ffe2e2] active:scale-95 transition-all"
+                  >
+                    C
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('(')}
+                    className="py-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95 transition-all"
+                  >
+                    (
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton(')')}
+                    className="py-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95 transition-all"
+                  >
+                    )
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('÷')}
+                    className="py-2.5 rounded-xl bg-[#E8F8F5] text-[#3D9488] hover:bg-[#d6f2ed] active:scale-95 font-extrabold text-sm transition-all"
+                  >
+                    ÷
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('7')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    7
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('8')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    8
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('9')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    9
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('×')}
+                    className="py-2.5 rounded-xl bg-[#E8F8F5] text-[#3D9488] hover:bg-[#d6f2ed] active:scale-95 font-extrabold text-sm transition-all"
+                  >
+                    ×
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('4')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    4
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('5')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    5
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('6')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    6
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('-')}
+                    className="py-2.5 rounded-xl bg-[#E8F8F5] text-[#3D9488] hover:bg-[#d6f2ed] active:scale-95 font-extrabold text-sm transition-all"
+                  >
+                    -
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('1')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('2')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    2
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('3')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    3
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('+')}
+                    className="py-2.5 rounded-xl bg-[#E8F8F5] text-[#3D9488] hover:bg-[#d6f2ed] active:scale-95 font-extrabold text-sm transition-all"
+                  >
+                    +
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('0')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    0
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('.')}
+                    className="py-2.5 rounded-xl bg-white text-gray-800 shadow-2xs hover:bg-gray-50 active:scale-95 transition-all"
+                  >
+                    .
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('DEL')}
+                    className="py-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 active:scale-95 transition-all flex items-center justify-center font-bold"
+                  >
+                    ⌫
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCalcButton('=')}
+                    className="py-2.5 rounded-xl bg-[#FF7676] text-white hover:bg-[#F46C6C] active:scale-95 font-extrabold text-sm transition-all shadow-2xs"
+                  >
+                    =
+                  </button>
+                </div>
+
+                {/* Apply Result Button */}
+                <button
+                  type="button"
+                  onClick={handleApplyCalcToEntry}
+                  className="w-full py-2.5 px-3 rounded-xl bg-[#58B5A7] hover:bg-[#4EABA0] active:scale-[0.98] text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Add to Entry</span>
+                  {calcPreview !== null ? (
+                    <span className="bg-black/15 px-1.5 py-0.5 rounded-md text-[11px] font-mono">
+                      ${calcPreview.toFixed(2)}
+                    </span>
+                  ) : calcExpression ? (
+                    <span className="bg-black/15 px-1.5 py-0.5 rounded-md text-[11px] font-mono">
+                      ${calcExpression}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Category Grid (2 rows x 4+ cols) - shown for Expense and Income */}
