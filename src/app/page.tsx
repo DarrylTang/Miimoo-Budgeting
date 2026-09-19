@@ -54,7 +54,15 @@ export default function App() {
         <Header
           onOpenDrawer={() => setIsDrawerOpen(true)}
           isSearchOpen={isSearchOpen}
-          onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
+          onToggleSearch={() => {
+            setIsSearchOpen((prev) => {
+              const next = !prev;
+              if (next && currentTab !== 'home') {
+                setCurrentTab('home');
+              }
+              return next;
+            });
+          }}
         />
 
         {/* Main Content Area */}
@@ -67,6 +75,7 @@ export default function App() {
               }}
               onOpenAccounts={() => setIsAccountsOpen(true)}
               isSearchOpen={isSearchOpen}
+              onCloseSearch={() => setIsSearchOpen(false)}
               onEditTransaction={handleOpenEdit}
             />
           )}
