@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📱 Miimoo Budgeting
 
-## Getting Started
+A private, mobile-first responsive web budgeting application built with Next.js, Tailwind CSS, and Convex, crafted specifically for single-user personal finance management.
 
-First, run the development server:
+---
 
+## 🔒 Security & Access Gate
+
+This application is hardened for production hosting on Vercel:
+- **Master Passcode / PIN Gatekeeper**: All views and data are blocked behind a full-screen numeric PIN lock screen (`PinAuthModal`).
+- **Perpetual Trusted Session**: Once you enter your PIN, the device stores a long-lived session cookie/token so you don't have to re-enter your PIN on every visit.
+- **Manual Lock Anytime**: Tap **Lock App** inside the Sidebar Drawer to instantly re-lock the session.
+- **Customizable PIN**: Set `NEXT_PUBLIC_MASTER_PIN` in Vercel Environment Variables, or change your Master PIN anytime via the drawer settings (**Security & Master PIN**).
+- **Search Engine Blocking**: Includes `public/robots.txt` (`Disallow: /`) and `<meta name="robots" content="noindex, nofollow">` to prevent public search engines from indexing your financial records.
+- **HTTP Security Headers**: Strict `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy` configured in `next.config.ts`.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Local Development
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser. The default Master PIN is `1234`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 2. Environment Variables (`.env.local`)
+```env
+# Custom Master PIN for production access (default is 1234 if unset)
+NEXT_PUBLIC_MASTER_PIN=1234
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Convex Deployment URL (configured automatically on Vercel)
+NEXT_PUBLIC_CONVEX_URL=https://<your-project>.convex.cloud
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## ☁️ Deployment on Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Push this repository to GitHub.
+2. In your Vercel Dashboard, import the repository:
+   - **Framework Preset**: Next.js
+   - **Root Directory**: `./`
+3. Under **Environment Variables**, add:
+   - `NEXT_PUBLIC_MASTER_PIN`: Your desired 4–6 digit master PIN.
+   - `NEXT_PUBLIC_CONVEX_URL`: Your Convex deployment URL (if using Convex backend).
+4. Deploy! Vercel will automatically build and deploy the app. Future pushes to `main` trigger automated production builds.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 💼 Core Features
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Mobile-First Responsive UI**: Styled after modern iOS budgeting applications with curved wave header, pastel coral (`#F46C6C`) and mint (`#58B5A7`) accents, and haptic-feel interactions.
+- **Credit Card Tracker**: Track multiple cards with EMV chip preview, cycle start days, cashback perk thresholds (Min Spend Requirement), and customizable monthly limits (supports typing `$0` for unlimited spending).
+- **Multi-Month Global Search**: Instant search across all months, categories, credit cards, accounts, amounts (including operators like `>100`), and dates.
+- **Built-in Keypad Calculator**: Quick calculations while entering transactions.
+- **Data Center**: 1-click JSON backup, CSV export, restore backup, plus 1-tap "Load Demo Data" and "Clear Slate" buttons.

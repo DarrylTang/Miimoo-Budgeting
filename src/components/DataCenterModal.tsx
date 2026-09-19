@@ -24,6 +24,8 @@ export function DataCenterModal({ isOpen, onClose }: DataCenterModalProps) {
     exportCSV,
     importJSON,
     resetToSampleData,
+    loadDemoData,
+    resetToCleanState,
     transactions,
     accounts,
     categories,
@@ -191,19 +193,31 @@ export function DataCenterModal({ isOpen, onClose }: DataCenterModalProps) {
             />
           </div>
 
-          {/* Reset button */}
-          <div className="pt-2">
+          {/* Reset & Demo data buttons */}
+          <div className="pt-2 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => {
-                resetToSampleData();
-                setStatusMsg({ type: 'success', text: 'Reset to sample data completed.' });
+                loadDemoData();
+                setStatusMsg({ type: 'success', text: 'Loaded demo transactions for Sep 2026.' });
                 setTimeout(() => setStatusMsg(null), 3000);
               }}
-              className="w-full py-2.5 px-3 rounded-xl bg-gray-100 text-[#718096] hover:bg-gray-200 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+              className="py-2.5 px-3 rounded-xl bg-gray-100 text-[#4A5568] hover:bg-gray-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset to Sample Data</span>
+              <span>Load Demo Data</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetToCleanState();
+                setStatusMsg({ type: 'success', text: 'All data cleared to fresh personal clean state.' });
+                setTimeout(() => setStatusMsg(null), 3000);
+              }}
+              className="py-2.5 px-3 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <span>Clear to Fresh Slate</span>
             </button>
           </div>
         </div>

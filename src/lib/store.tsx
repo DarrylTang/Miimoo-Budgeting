@@ -18,10 +18,17 @@ export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: 'cat-transfer', name: 'Transfer', icon: 'ArrowRightLeft', color: '#64748B', bgColor: '#F1F5F9', type: 'both' },
 ];
 
-export const DEFAULT_ACCOUNTS: Account[] = [
+export const DEMO_ACCOUNTS: Account[] = [
   { id: 'acc-main', name: 'Main Account (Local)', type: 'local', currency: 'SGD', balance: 4850.50, isDefault: true, color: '#F46C6C' },
   { id: 'acc-overseas', name: 'Overseas Card', type: 'overseas', currency: 'SGD', balance: 620.00, color: '#58B5A7' },
 ];
+
+export const CLEAN_ACCOUNTS: Account[] = [
+  { id: 'acc-main', name: 'Main Account (Local)', type: 'local', currency: 'SGD', balance: 0.00, isDefault: true, color: '#F46C6C' },
+  { id: 'acc-overseas', name: 'Overseas Card', type: 'overseas', currency: 'SGD', balance: 0.00, color: '#58B5A7' },
+];
+
+export const DEFAULT_ACCOUNTS: Account[] = CLEAN_ACCOUNTS;
 
 export const DEFAULT_CREDIT_CARDS: CreditCard[] = [
   {
@@ -80,7 +87,7 @@ export const DEFAULT_QUICK_TAGS = [
   'Gas petrol',
 ];
 
-export const INITIAL_TRANSACTIONS: Transaction[] = [
+export const DEMO_TRANSACTIONS: Transaction[] = [
   // 2026-09-19
   { id: 'tx-1', type: 'expense', amount: 34.44, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-19', memo: 'Dinner for fam', createdAt: 1789800000000 },
   { id: 'tx-2', type: 'expense', amount: 18.20, category: 'Food', accountId: 'acc-overseas', date: '2026-09-19', memo: 'Malaysia spenditure', createdAt: 1789799000000 },
@@ -147,6 +154,11 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   { id: 'tx-aug-1', type: 'expense', amount: 1390.00, category: 'Utilities', accountId: 'acc-main', date: '2026-08-16', memo: 'Aug living expenses', createdAt: 1786838400000 },
 ];
 
+export const INITIAL_TRANSACTIONS: Transaction[] = [];
+
+export const AUTH_TOKEN_KEY = 'miimoo_auth_session_v1';
+export const CUSTOM_PIN_KEY = 'miimoo_master_pin_v1';
+
 const STORAGE_KEY = 'miimoo_budget_data_v1';
 
 interface BudgetState {
@@ -162,6 +174,13 @@ interface BudgetState {
 }
 
 interface BudgetContextType extends BudgetState {
+  isUnlocked: boolean;
+  unlockApp: (pin: string) => boolean;
+  lockApp: () => void;
+  setMasterPin: (newPin: string) => void;
+  hasCustomMasterPin: boolean;
+  loadDemoData: () => void;
+  resetToCleanState: () => void;
   addTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => void;
   updateTransaction: (id: string, tx: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
@@ -194,6 +213,8 @@ const BudgetContext = createContext<BudgetContextType | null>(null);
 
 export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [hasCustomMasterPin, setHasCustomMasterPin] = useState(false);
   const [userName, setUserName] = useState('Darryl');
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState('acc-main');
@@ -203,6 +224,22 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const [categories, setCategories] = useState<CategoryItem[]>(DEFAULT_CATEGORIES);
   const [recurring, setRecurring] = useState<RecurringRule[]>(DEFAULT_RECURRING);
   const [quickTags, setQuickTags] = useState<string[]>(DEFAULT_QUICK_TAGS);
+
+  // Check persistent auth session on mount
+  useEffect(() => {
+    try {
+      const auth = localStorage.getItem(AUTH_TOKEN_KEY);
+      if (auth === 'unlocked') {
+        setIsUnlocked(true);
+      }
+      const customPin = localStorage.getItem(CUSTOM_PIN_KEY);
+      if (customPin) {
+        setHasCustomMasterPin(true);
+      }
+    } catch (e) {
+      console.error('Error checking auth session:', e);
+    }
+  }, []);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -250,7 +287,71 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error('Error saving budget data to localStorage:', e);
     }
-  }, [isLoaded, transactions, accounts, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName]);
+  }, [isLoaded, transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName]);
+
+  const getMasterPin = useCallback(() => {
+    try {
+      const custom = localStorage.getItem(CUSTOM_PIN_KEY);
+      if (custom && custom.trim()) return custom.trim();
+    } catch (e) {}
+    return (process.env.NEXT_PUBLIC_MASTER_PIN || '1234').trim();
+  }, []);
+
+  const unlockApp = useCallback((pin: string) => {
+    const requiredPin = getMasterPin();
+    if (pin.trim() === requiredPin) {
+      localStorage.setItem(AUTH_TOKEN_KEY, 'unlocked');
+      try {
+        document.cookie = 'miimoo_auth=unlocked; path=/; max-age=31536000; SameSite=Lax';
+      } catch (e) {}
+      setIsUnlocked(true);
+      return true;
+    }
+    return false;
+  }, [getMasterPin]);
+
+  const lockApp = useCallback(() => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    try {
+      document.cookie = 'miimoo_auth=; path=/; max-age=0; SameSite=Lax';
+    } catch (e) {}
+    setIsUnlocked(false);
+  }, []);
+
+  const setMasterPin = useCallback((newPin: string) => {
+    if (newPin.trim()) {
+      localStorage.setItem(CUSTOM_PIN_KEY, newPin.trim());
+      setHasCustomMasterPin(true);
+    } else {
+      localStorage.removeItem(CUSTOM_PIN_KEY);
+      setHasCustomMasterPin(false);
+    }
+  }, []);
+
+  const loadDemoData = useCallback(() => {
+    setTransactions(DEMO_TRANSACTIONS);
+    setAccounts(DEMO_ACCOUNTS);
+    setCards(DEFAULT_CARDS);
+    setCategories(DEFAULT_CATEGORIES);
+    setRecurring(DEFAULT_RECURRING);
+    setQuickTags(DEFAULT_QUICK_TAGS);
+    setUserName('Darryl');
+    setIsBalanceHidden(false);
+    setSelectedAccountId('acc-main');
+  }, []);
+
+  const resetToCleanState = useCallback(() => {
+    setTransactions([]);
+    setAccounts(CLEAN_ACCOUNTS);
+    setCards(DEFAULT_CARDS);
+    setCategories(DEFAULT_CATEGORIES);
+    setRecurring([]);
+    setQuickTags(DEFAULT_QUICK_TAGS);
+    setUserName('Darryl');
+    setIsBalanceHidden(false);
+    setSelectedAccountId('acc-main');
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
 
   const addTransaction = useCallback((txData: Omit<Transaction, 'id' | 'createdAt'>) => {
     const id = 'tx-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
@@ -500,18 +601,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const resetToSampleData = useCallback(() => {
-    setTransactions(INITIAL_TRANSACTIONS);
-    setAccounts(DEFAULT_ACCOUNTS);
-    setCards(DEFAULT_CARDS);
-    setCategories(DEFAULT_CATEGORIES);
-    setRecurring(DEFAULT_RECURRING);
-    setQuickTags(DEFAULT_QUICK_TAGS);
-    setUserName('Darryl');
-    setIsBalanceHidden(false);
-    setSelectedAccountId('acc-main');
-    localStorage.removeItem(STORAGE_KEY);
-  }, []);
+  const resetToSampleData = loadDemoData;
 
   const value: BudgetContextType = {
     transactions,
@@ -523,6 +613,13 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     isBalanceHidden,
     selectedAccountId,
     userName,
+    isUnlocked,
+    unlockApp,
+    lockApp,
+    setMasterPin,
+    hasCustomMasterPin,
+    loadDemoData,
+    resetToCleanState,
     addTransaction,
     updateTransaction,
     deleteTransaction,

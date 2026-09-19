@@ -12,10 +12,14 @@ import { ManageCategoriesModal } from '@/components/ManageCategoriesModal';
 import { RecurringModal } from '@/components/RecurringModal';
 import { DataCenterModal } from '@/components/DataCenterModal';
 import { QAHelpModal } from '@/components/QAHelpModal';
+import { PinAuthModal } from '@/components/PinAuthModal';
 import { BottomNav, TabType } from '@/components/BottomNav';
 import { Transaction } from '@/types';
+import { useBudget } from '@/lib/store';
 
 export default function App() {
+  const { isUnlocked } = useBudget();
+
   // Navigation tabs: 'home' | 'analytics' | 'cards' | 'more'
   const [currentTab, setCurrentTab] = useState<TabType>('home');
 
@@ -144,6 +148,9 @@ export default function App() {
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}
       />
+
+      {/* Master PIN Gatekeeper (Blocks all unauthorized visitors) */}
+      <PinAuthModal isOpen={!isUnlocked} />
     </div>
   );
 }

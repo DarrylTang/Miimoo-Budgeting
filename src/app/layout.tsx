@@ -35,6 +35,10 @@ export const metadata: Metadata = {
     icon: "/icon.svg",
     apple: "/icon.svg",
   },
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({

@@ -15,6 +15,9 @@ import {
   ChevronRight,
   ShieldCheck,
   Tag,
+  Lock,
+  KeyRound,
+  Check,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 
@@ -42,6 +45,11 @@ export function SidebarDrawer({
     setUserName,
     exportJSON,
     resetToSampleData,
+    loadDemoData,
+    resetToCleanState,
+    lockApp,
+    setMasterPin,
+    hasCustomMasterPin,
     isBalanceHidden,
     toggleBalanceHidden,
     accounts,
@@ -52,6 +60,11 @@ export function SidebarDrawer({
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(userName);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [isChangingPin, setIsChangingPin] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [pinError, setPinError] = useState('');
+  const [pinSuccess, setPinSuccess] = useState(false);
 
   if (!isOpen) return null;
 
@@ -66,9 +79,30 @@ export function SidebarDrawer({
     exportJSON();
   };
 
+  const handleUpdatePin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError('');
+    if (newPin.length < 4 || newPin.length > 6 || !/^\d+$/.test(newPin)) {
+      setPinError('PIN must be 4 to 6 numeric digits');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setPinError('PINs do not match');
+      return;
+    }
+    setMasterPin(newPin);
+    setPinSuccess(true);
+    setTimeout(() => {
+      setPinSuccess(false);
+      setIsChangingPin(false);
+      setNewPin('');
+      setConfirmPin('');
+    }, 1200);
+  };
+
   const handleReset = () => {
     if (confirmReset) {
-      resetToSampleData();
+      resetToCleanState();
       setConfirmReset(false);
       onClose();
     } else {
@@ -272,30 +306,164 @@ export function SidebarDrawer({
                 {isBalanceHidden ? 'Hidden' : 'Visible'}
               </span>
             </button>
+
+            {/* Security & Master PIN */}
+            <button
+              onClick={() => setIsChangingPin(true)}
+              className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#ECFDF5] flex items-center justify-center text-[#10B981]">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-semibold text-sm text-[#2D3748] block">Security & Master PIN</span>
+                  <span className="text-[11px] text-gray-400">
+                    {hasCustomMasterPin ? 'Custom PIN active' : 'Default PIN (1234)'}
+                  </span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </button>
+
+            {/* Lock App */}
+            <button
+              onClick={() => {
+                onClose();
+                lockApp();
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-red-50 active:bg-red-100 transition-colors text-left group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-[#FFF0F0] flex items-center justify-center text-[#F46C6C]">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-semibold text-sm text-[#E53E3E] block">Lock App</span>
+                  <span className="text-[11px] text-gray-400">Require Master PIN to re-enter</span>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-red-400" />
+            </button>
           </div>
         </div>
 
-        {/* Footer / Reset Data */}
-        <div className="p-4 border-t border-gray-100 pb-safe">
-          <div className="flex items-center justify-center gap-1 text-[11px] text-gray-400 mb-3">
+        {/* Footer / Reset & Demo Data */}
+        <div className="p-4 border-t border-gray-100 pb-safe space-y-2">
+          <div className="flex items-center justify-center gap-1 text-[11px] text-gray-400 mb-1">
             <ShieldCheck className="w-3.5 h-3.5 text-[#58B5A7]" />
             <span>Miimoo Budgeting v1.0 • Offline Ready</span>
           </div>
 
-          <button
-            type="button"
-            onClick={handleReset}
-            className={`w-full py-2.5 px-3 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition-all ${
-              confirmReset
-                ? 'bg-[#E53E3E] text-white animate-pulse'
-                : 'bg-gray-100 text-[#718096] hover:bg-red-50 hover:text-red-600'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>{confirmReset ? 'Tap again to confirm reset' : 'Reset to Sample Data'}</span>
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                loadDemoData();
+                onClose();
+              }}
+              className="py-2.5 px-3 rounded-xl text-xs font-semibold bg-gray-100 text-[#4A5568] hover:bg-gray-200 active:scale-[0.98] flex items-center justify-center gap-1.5 transition-all"
+              title="Populate September 2026 sample transactions"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Load Demo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleReset}
+              className={`py-2.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${
+                confirmReset
+                  ? 'bg-[#E53E3E] text-white animate-pulse'
+                  : 'bg-red-50 text-red-600 hover:bg-red-100'
+              }`}
+              title="Reset all data to empty personal clean slate"
+            >
+              <span>{confirmReset ? 'Confirm Clear?' : 'Clear Slate'}</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Change Master PIN Modal */}
+      {isChangingPin && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="w-full max-w-xs bg-white rounded-3xl p-5 shadow-2xl animate-in zoom-in-95 duration-150 space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="font-extrabold text-sm text-[#2D3748] flex items-center gap-1.5">
+                <KeyRound className="w-4 h-4 text-[#10B981]" />
+                Change Master PIN
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsChangingPin(false);
+                  setNewPin('');
+                  setConfirmPin('');
+                  setPinError('');
+                }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdatePin} className="space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">
+                  New PIN (4–6 digits)
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  inputMode="numeric"
+                  placeholder="e.g. 5678"
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold tracking-widest text-center focus:border-[#10B981] outline-hidden"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 block mb-1">
+                  Confirm New PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  inputMode="numeric"
+                  placeholder="Confirm PIN"
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold tracking-widest text-center focus:border-[#10B981] outline-hidden"
+                />
+              </div>
+
+              {pinError && (
+                <div className="text-[11px] text-[#E53E3E] font-bold text-center">
+                  {pinError}
+                </div>
+              )}
+
+              {pinSuccess && (
+                <div className="text-[11px] text-[#10B981] font-bold text-center flex items-center justify-center gap-1">
+                  <Check className="w-3.5 h-3.5" />
+                  PIN updated successfully!
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={!newPin || !confirmPin || pinSuccess}
+                className="w-full py-2.5 bg-[#10B981] hover:bg-[#0D9488] disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Save Master PIN
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
