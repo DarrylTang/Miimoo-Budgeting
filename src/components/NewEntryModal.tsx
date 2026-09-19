@@ -11,6 +11,8 @@ import {
   DollarSign,
   Calculator,
   Delete,
+  CreditCard as CreditCardIcon,
+  Star,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 import { CategoryIcon } from '@/components/CategoryIcon';
@@ -45,6 +47,7 @@ export function NewEntryModal({
 }: NewEntryModalProps) {
   const {
     accounts,
+    cards,
     categories,
     quickTags,
     addTransaction,
@@ -59,6 +62,7 @@ export function NewEntryModal({
   const [amountStr, setAmountStr] = useState('0');
   const [selectedCategory, setSelectedCategory] = useState('Food');
   const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id || 'acc-main');
+  const [selectedCardId, setSelectedCardId] = useState<string>('');
   const [toAccountId, setToAccountId] = useState(accounts[1]?.id || 'acc-overseas');
   const [dateStr, setDateStr] = useState('2026-09-19');
   const [memo, setMemo] = useState('');
@@ -79,6 +83,7 @@ export function NewEntryModal({
       setAmountStr(editingTransaction.amount.toString());
       setSelectedCategory(editingTransaction.category);
       setSelectedAccountId(editingTransaction.accountId);
+      setSelectedCardId(editingTransaction.cardId || '');
       if (editingTransaction.toAccountId) {
         setToAccountId(editingTransaction.toAccountId);
       }
@@ -99,13 +104,17 @@ export function NewEntryModal({
       const otherAcc = accounts.find(a => a.id !== defaultAcc)?.id || accounts[1]?.id || 'acc-overseas';
       setToAccountId(otherAcc);
 
+      // Default to configured default credit card
+      const defaultCard = cards.find(c => c.isDefault) || cards[0];
+      setSelectedCardId(defaultCard ? defaultCard.id : '');
+
       setDateStr('2026-09-19'); // Default to Sep 19, 2026 matching screenshots
       setMemo('');
       setIsCalculatorOpen(false);
       setCalcExpression('');
       setCalcPreview(null);
     }
-  }, [editingTransaction, isOpen, accounts, activeAccountId]);
+  }, [editingTransaction, isOpen, accounts, cards, activeAccountId]);
 
   if (!isOpen) return null;
 
@@ -192,6 +201,8 @@ export function NewEntryModal({
   const handleSave = (keepOpen = false) => {
     if (parsedAmount <= 0) return;
 
+    const effectiveCardId = type === 'expense' && selectedCardId ? selectedCardId : undefined;
+
     if (type === 'transfer') {
       transferMoney(selectedAccountId, toAccountId, parsedAmount, memo, dateStr);
     } else if (editingTransaction) {
@@ -200,6 +211,7 @@ export function NewEntryModal({
         amount: parsedAmount,
         category: selectedCategory,
         accountId: selectedAccountId,
+        cardId: effectiveCardId,
         toAccountId: undefined,
         date: dateStr,
         memo,
@@ -210,6 +222,7 @@ export function NewEntryModal({
         amount: parsedAmount,
         category: selectedCategory,
         accountId: selectedAccountId,
+        cardId: effectiveCardId,
         toAccountId: undefined,
         date: dateStr,
         memo,
@@ -554,9 +567,17 @@ export function NewEntryModal({
           {type !== 'transfer' && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#A0AEC0]">
-                  Category
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#A0AEC0]">
+                    Category
+                  </span>
+                  {selectedCardId && (
+                    <span className="text-[10px] font-semibold text-[#58B5A7] flex items-center gap-0.5">
+                      <Star className="w-2.5 h-2.5 fill-[#58B5A7]" />
+                      <span>Reward boosts highlighted</span>
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={() => setIsAddingCategory(true)}
@@ -571,19 +592,56 @@ export function NewEntryModal({
               <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                 {visibleCategories.map((cat) => {
                   const isSelected = selectedCategory === cat.name;
+                  const activeCard = cards.find((c) => c.id === selectedCardId);
+                  const isCardPick = Boolean(
+                    type === 'expense' &&
+                    activeCard &&
+                    activeCard.rewardCategories &&
+                    activeCard.rewardCategories.includes(cat.name)
+                  );
+
+                  // Card theme accent styles for highlighting
+                  const getCardHighlightRing = () => {
+                    if (!activeCard) return 'ring-2 ring-amber-400 border-amber-300';
+                    switch (activeCard.colorTheme) {
+                      case 'obsidian':
+                        return 'ring-2 ring-slate-400 border-slate-400 shadow-sm';
+                      case 'coral':
+                        return 'ring-2 ring-[#F46C6C] border-[#F46C6C] shadow-sm';
+                      case 'emerald':
+                        return 'ring-2 ring-[#10B981] border-[#10B981] shadow-sm';
+                      case 'ocean':
+                        return 'ring-2 ring-[#3B82F6] border-[#3B82F6] shadow-sm';
+                      case 'purple':
+                        return 'ring-2 ring-[#8B5CF6] border-[#8B5CF6] shadow-sm';
+                      default:
+                        return 'ring-2 ring-amber-400 border-amber-300 shadow-sm';
+                    }
+                  };
+
                   return (
                     <button
                       key={cat.id}
                       type="button"
                       onClick={() => setSelectedCategory(cat.name)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all ${
+                      className={`relative flex flex-col items-center justify-center p-2 rounded-2xl transition-all ${
                         isSelected
                           ? type === 'income'
                             ? 'bg-[#E8F8F5] ring-2 ring-[#58B5A7]'
                             : 'bg-[#FFF0F0] ring-2 ring-[#F46C6C]'
+                          : isCardPick
+                          ? `bg-[#FFFDF5] ${getCardHighlightRing()}`
                           : 'bg-[#F9FAFB] hover:bg-gray-100'
                       }`}
                     >
+                      {/* Dynamic Card Pick Badge */}
+                      {isCardPick && (
+                        <span className="absolute -top-2 right-0.5 px-1.5 py-0.5 rounded-full text-[8px] font-black tracking-tight bg-gradient-to-r from-amber-400 to-amber-500 text-gray-900 shadow-xs flex items-center gap-0.5 border border-amber-300/80 z-10">
+                          <Star className="w-2 h-2 fill-gray-900" />
+                          <span>Card Pick</span>
+                        </span>
+                      )}
+
                       <div
                         className={`w-9 h-9 rounded-full flex items-center justify-center mb-1 ${
                           isSelected
@@ -604,6 +662,8 @@ export function NewEntryModal({
                             ? type === 'income'
                               ? 'text-[#58B5A7]'
                               : 'text-[#F46C6C]'
+                            : isCardPick
+                            ? 'text-gray-900 font-bold'
                             : 'text-[#4A5568]'
                         }`}
                       >
@@ -655,7 +715,7 @@ export function NewEntryModal({
             </div>
           )}
 
-          {/* Account Selector Row */}
+          {/* Account & Card Selector Row */}
           <div className="bg-[#F8F9FA] p-3 rounded-2xl space-y-2">
             {type === 'transfer' ? (
               <div className="space-y-2">
@@ -689,19 +749,41 @@ export function NewEntryModal({
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#718096]">Account:</span>
-                <select
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="text-xs font-bold text-[#2D3748] bg-white border border-gray-200 rounded-xl px-3 py-1 outline-hidden"
-                >
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.currency})
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#718096]">Account:</span>
+                  <select
+                    value={selectedAccountId}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className="text-xs font-bold text-[#2D3748] bg-white border border-gray-200 rounded-xl px-3 py-1 outline-hidden"
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.currency})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Credit Card Row directly below Account */}
+                <div className="flex items-center justify-between pt-1 border-t border-gray-200/60">
+                  <div className="flex items-center gap-1.5">
+                    <CreditCardIcon className="w-3.5 h-3.5 text-gray-400" />
+                    <span className="text-xs font-bold text-[#718096]">Card:</span>
+                  </div>
+                  <select
+                    value={selectedCardId}
+                    onChange={(e) => setSelectedCardId(e.target.value)}
+                    className="text-xs font-bold text-[#2D3748] bg-white border border-gray-200 rounded-xl px-2.5 py-1 outline-hidden max-w-[210px]"
+                  >
+                    <option value="">No Card / Cash / Debit</option>
+                    {cards.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.isDefault ? '★ (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 

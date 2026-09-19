@@ -5,11 +5,11 @@ import {
   Home,
   BarChart3,
   Plus,
-  Wallet,
+  CreditCard as CreditCardIcon,
   Menu,
 } from 'lucide-react';
 
-export type TabType = 'home' | 'analytics' | 'accounts' | 'more';
+export type TabType = 'home' | 'analytics' | 'cards' | 'more';
 
 interface BottomNavProps {
   currentTab: TabType;
@@ -68,16 +68,16 @@ export function BottomNav({
           {/* Spacer for center button */}
           <div className="w-12 pointer-events-none" />
 
-          {/* Accounts Tab */}
+          {/* Cards Tab */}
           <button
             type="button"
-            onClick={() => onChangeTab('accounts')}
+            onClick={() => onChangeTab('cards')}
             className={`flex flex-col items-center justify-center flex-1 py-1 ml-4 transition-colors ${
-              currentTab === 'accounts' ? 'text-[#F46C6C]' : 'text-gray-400 hover:text-gray-600'
+              currentTab === 'cards' ? 'text-[#F46C6C]' : 'text-gray-400 hover:text-gray-600'
             }`}
           >
-            <Wallet className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold mt-1 tracking-tight">Accounts</span>
+            <CreditCardIcon className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold mt-1 tracking-tight">Cards</span>
           </button>
 
           {/* More Tab -> opens Drawer */}

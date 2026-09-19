@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
-import { Transaction, Account, RecurringRule, CategoryItem } from '@/types';
+import { Transaction, Account, RecurringRule, CategoryItem, CreditCard, CardColorTheme } from '@/types';
 
 export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: 'cat-food', name: 'Food', icon: 'UtensilsCrossed', color: '#F46C6C', bgColor: '#FFF0F0', type: 'expense' },
@@ -23,11 +23,44 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: 'acc-overseas', name: 'Overseas Card', type: 'overseas', currency: 'SGD', balance: 620.00, color: '#58B5A7' },
 ];
 
+export const DEFAULT_CREDIT_CARDS: CreditCard[] = [
+  {
+    id: 'card-dbs',
+    name: 'DBS Live Fresh',
+    cardColor: 'from-[#FF5E62] to-[#FF9966]',
+    maxSpendLimit: 2500,
+    minSpendRequirement: 600,
+    billingCycleStartDay: 1,
+    rewardCategories: ['Food', 'Shopping', 'Entertainment'],
+    isDefault: true,
+    colorTheme: 'coral',
+    maxLimit: 2500,
+    minSpend: 600,
+    billingCycleDay: 1,
+  },
+  {
+    id: 'card-citi',
+    name: 'Citi Cash Back',
+    cardColor: 'from-[#0F2027] via-[#203A43] to-[#2C5364]',
+    maxSpendLimit: 3500,
+    minSpendRequirement: 800,
+    billingCycleStartDay: 1,
+    rewardCategories: ['Groceries', 'Utilities', 'Transportation'],
+    isDefault: false,
+    colorTheme: 'ocean',
+    maxLimit: 3500,
+    minSpend: 800,
+    billingCycleDay: 1,
+  },
+];
+
+export const DEFAULT_CARDS = DEFAULT_CREDIT_CARDS;
+
 export const DEFAULT_RECURRING: RecurringRule[] = [
-  { id: 'rec-1', title: 'Monthly Salary', amount: 1185.00, type: 'income', category: 'Salary', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-01', isActive: true },
-  { id: 'rec-2', title: 'House maintenance', amount: 100.00, type: 'expense', category: 'Housing', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-01', isActive: true },
-  { id: 'rec-3', title: 'SP Services Utilities', amount: 115.40, type: 'expense', category: 'Utilities', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-12', isActive: true },
-  { id: 'rec-4', title: 'Gym & Club membership', amount: 45.00, type: 'expense', category: 'Health', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-15', isActive: true },
+  { id: 'rec-1', title: 'Monthly Salary', amount: 1185.00, type: 'income', category: 'Salary', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-01', startDate: '2026-09-01', dayOfMonth: 1, isActive: true },
+  { id: 'rec-2', title: 'House maintenance', amount: 100.00, type: 'expense', category: 'Housing', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-01', startDate: '2026-09-01', dayOfMonth: 1, isActive: true },
+  { id: 'rec-3', title: 'SP Services Utilities', amount: 115.40, type: 'expense', category: 'Utilities', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-12', startDate: '2026-09-12', dayOfMonth: 12, isActive: true },
+  { id: 'rec-4', title: 'Gym & Club membership', amount: 45.00, type: 'expense', category: 'Health', accountId: 'acc-main', frequency: 'monthly', nextDate: '2026-10-15', startDate: '2026-09-15', dayOfMonth: 15, isActive: true },
 ];
 
 export const DEFAULT_QUICK_TAGS = [
@@ -49,32 +82,32 @@ export const DEFAULT_QUICK_TAGS = [
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
   // 2026-09-19
-  { id: 'tx-1', type: 'expense', amount: 34.44, category: 'Food', accountId: 'acc-main', date: '2026-09-19', memo: 'Dinner for fam', createdAt: 1789800000000 },
+  { id: 'tx-1', type: 'expense', amount: 34.44, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-19', memo: 'Dinner for fam', createdAt: 1789800000000 },
   { id: 'tx-2', type: 'expense', amount: 18.20, category: 'Food', accountId: 'acc-overseas', date: '2026-09-19', memo: 'Malaysia spenditure', createdAt: 1789799000000 },
   { id: 'tx-3', type: 'expense', amount: 12.50, category: 'Food', accountId: 'acc-overseas', date: '2026-09-19', memo: 'JB food', createdAt: 1789798000000 },
   
   // 2026-09-18
-  { id: 'tx-4', type: 'expense', amount: 45.80, category: 'Food', accountId: 'acc-main', date: '2026-09-18', memo: 'yakiniku', createdAt: 1789700000000 },
-  { id: 'tx-5', type: 'expense', amount: 8.90, category: 'Food', accountId: 'acc-main', date: '2026-09-18', memo: 'tori q', createdAt: 1789699000000 },
-  { id: 'tx-6', type: 'expense', amount: 62.30, category: 'Groceries', accountId: 'acc-main', date: '2026-09-18', memo: 'FairPrice groceries', createdAt: 1789698000000 },
+  { id: 'tx-4', type: 'expense', amount: 45.80, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-18', memo: 'yakiniku', createdAt: 1789700000000 },
+  { id: 'tx-5', type: 'expense', amount: 8.90, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-18', memo: 'tori q', createdAt: 1789699000000 },
+  { id: 'tx-6', type: 'expense', amount: 62.30, category: 'Groceries', accountId: 'acc-main', cardId: 'card-citi', date: '2026-09-18', memo: 'FairPrice groceries', createdAt: 1789698000000 },
   
   // 2026-09-15
-  { id: 'tx-7', type: 'expense', amount: 58.00, category: 'Entertainment', accountId: 'acc-main', date: '2026-09-15', memo: 'Didi birthday cake', createdAt: 1789400000000 },
-  { id: 'tx-8', type: 'expense', amount: 3.20, category: 'Transportation', accountId: 'acc-main', date: '2026-09-15', memo: 'MRT transport', createdAt: 1789399000000 },
-  { id: 'tx-9', type: 'expense', amount: 14.50, category: 'Food', accountId: 'acc-main', date: '2026-09-15', memo: 'premium soup', createdAt: 1789398000000 },
+  { id: 'tx-7', type: 'expense', amount: 198.44, category: 'Entertainment', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-15', memo: 'Didi birthday party', createdAt: 1789400000000 },
+  { id: 'tx-8', type: 'expense', amount: 3.20, category: 'Transportation', accountId: 'acc-main', cardId: 'card-citi', date: '2026-09-15', memo: 'MRT transport', createdAt: 1789399000000 },
+  { id: 'tx-9', type: 'expense', amount: 14.50, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-15', memo: 'premium soup', createdAt: 1789398000000 },
 
   // 2026-09-12
-  { id: 'tx-10', type: 'expense', amount: 28.00, category: 'Food', accountId: 'acc-main', date: '2026-09-12', memo: 'pizza', createdAt: 1789100000000 },
-  { id: 'tx-11', type: 'expense', amount: 42.00, category: 'Entertainment', accountId: 'acc-main', date: '2026-09-12', memo: 'Liquor', createdAt: 1789099000000 },
-  { id: 'tx-12', type: 'expense', amount: 115.40, category: 'Utilities', accountId: 'acc-main', date: '2026-09-12', memo: 'SP Services Utilities', createdAt: 1789098000000 },
+  { id: 'tx-10', type: 'expense', amount: 28.00, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-12', memo: 'pizza', createdAt: 1789100000000 },
+  { id: 'tx-11', type: 'expense', amount: 42.00, category: 'Entertainment', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-12', memo: 'Liquor', createdAt: 1789099000000 },
+  { id: 'tx-12', type: 'expense', amount: 115.40, category: 'Utilities', accountId: 'acc-main', cardId: 'card-citi', date: '2026-09-12', memo: 'SP Services Utilities', createdAt: 1789098000000 },
 
   // 2026-09-08
-  { id: 'tx-13', type: 'expense', amount: 48.00, category: 'Food', accountId: 'acc-main', date: '2026-09-08', memo: 'for fam dinner', createdAt: 1788750000000 },
-  { id: 'tx-14', type: 'expense', amount: 16.50, category: 'Transportation', accountId: 'acc-main', date: '2026-09-08', memo: 'Grab ride', createdAt: 1788749000000 },
+  { id: 'tx-13', type: 'expense', amount: 48.00, category: 'Food', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-08', memo: 'for fam dinner', createdAt: 1788750000000 },
+  { id: 'tx-14', type: 'expense', amount: 16.50, category: 'Transportation', accountId: 'acc-main', cardId: 'card-citi', date: '2026-09-08', memo: 'Grab ride', createdAt: 1788749000000 },
 
   // 2026-09-05
-  { id: 'tx-15', type: 'expense', amount: 29.90, category: 'Clothing', accountId: 'acc-main', date: '2026-09-05', memo: 'Uniqlo T-shirt', createdAt: 1788500000000 },
-  { id: 'tx-16', type: 'expense', amount: 10.32, category: 'Health', accountId: 'acc-main', date: '2026-09-05', memo: 'Pharmacy vitamins', createdAt: 1788499000000 },
+  { id: 'tx-15', type: 'expense', amount: 29.90, category: 'Clothing', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-05', memo: 'Uniqlo T-shirt', createdAt: 1788500000000 },
+  { id: 'tx-16', type: 'expense', amount: 10.32, category: 'Health', accountId: 'acc-main', cardId: 'card-dbs', date: '2026-09-05', memo: 'Pharmacy vitamins', createdAt: 1788499000000 },
 
   // 2026-09-01
   { id: 'tx-17', type: 'income', amount: 1185.00, category: 'Salary', accountId: 'acc-main', date: '2026-09-01', memo: 'Monthly Salary', createdAt: 1788100000000 },
@@ -119,6 +152,7 @@ const STORAGE_KEY = 'miimoo_budget_data_v1';
 interface BudgetState {
   transactions: Transaction[];
   accounts: Account[];
+  cards: CreditCard[];
   categories: CategoryItem[];
   recurring: RecurringRule[];
   quickTags: string[];
@@ -135,7 +169,12 @@ interface BudgetContextType extends BudgetState {
   updateAccount: (id: string, acc: Partial<Account>) => void;
   deleteAccount: (id: string) => void;
   transferMoney: (fromId: string, toId: string, amount: number, memo?: string, date?: string) => void;
+  addCard: (card: Omit<CreditCard, 'id'>) => void;
+  updateCard: (id: string, card: Partial<CreditCard>) => void;
+  deleteCard: (id: string) => void;
+  setDefaultCard: (id: string) => void;
   addRecurringRule: (rule: Omit<RecurringRule, 'id'>) => void;
+  updateRecurringRule: (id: string, rule: Partial<RecurringRule>) => void;
   toggleRecurringRule: (id: string) => void;
   deleteRecurringRule: (id: string) => void;
   addCategory: (cat: Omit<CategoryItem, 'id'>) => void;
@@ -157,6 +196,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const [selectedAccountId, setSelectedAccountId] = useState('acc-main');
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
   const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
+  const [cards, setCards] = useState<CreditCard[]>(DEFAULT_CARDS);
   const [categories, setCategories] = useState<CategoryItem[]>(DEFAULT_CATEGORIES);
   const [recurring, setRecurring] = useState<RecurringRule[]>(DEFAULT_RECURRING);
   const [quickTags, setQuickTags] = useState<string[]>(DEFAULT_QUICK_TAGS);
@@ -169,6 +209,11 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(stored);
         if (parsed.transactions) setTransactions(parsed.transactions);
         if (parsed.accounts) setAccounts(parsed.accounts);
+        if (parsed.cards && Array.isArray(parsed.cards) && parsed.cards.length > 0) {
+          setCards(parsed.cards);
+        } else {
+          setCards(DEFAULT_CARDS);
+        }
         if (parsed.categories) setCategories(parsed.categories);
         if (parsed.recurring) setRecurring(parsed.recurring);
         if (parsed.quickTags) setQuickTags(parsed.quickTags);
@@ -190,6 +235,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       const dataToSave: BudgetState = {
         transactions,
         accounts,
+        cards,
         categories,
         recurring,
         quickTags,
@@ -300,12 +346,53 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     setRecurring(prev => [...prev, { ...rule, id }]);
   }, []);
 
+  const updateRecurringRule = useCallback((id: string, updates: Partial<RecurringRule>) => {
+    setRecurring(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  }, []);
+
   const toggleRecurringRule = useCallback((id: string) => {
     setRecurring(prev => prev.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r));
   }, []);
 
   const deleteRecurringRule = useCallback((id: string) => {
     setRecurring(prev => prev.filter(r => r.id !== id));
+  }, []);
+
+  const addCard = useCallback((cardData: Omit<CreditCard, 'id'>) => {
+    const id = 'card-' + Date.now();
+    setCards(prev => {
+      if (cardData.isDefault || prev.length === 0) {
+        return [...prev.map(c => ({ ...c, isDefault: false })), { ...cardData, isDefault: true, id }];
+      }
+      return [...prev, { ...cardData, id }];
+    });
+  }, []);
+
+  const updateCard = useCallback((id: string, updates: Partial<CreditCard>) => {
+    setCards(prev => prev.map(c => {
+      if (c.id === id) {
+        return { ...c, ...updates };
+      }
+      if (updates.isDefault) {
+        return { ...c, isDefault: false };
+      }
+      return c;
+    }));
+  }, []);
+
+  const deleteCard = useCallback((id: string) => {
+    setCards(prev => {
+      const filtered = prev.filter(c => c.id !== id);
+      const deletedWasDefault = prev.find(c => c.id === id)?.isDefault;
+      if (deletedWasDefault && filtered.length > 0) {
+        filtered[0] = { ...filtered[0], isDefault: true };
+      }
+      return filtered;
+    });
+  }, []);
+
+  const setDefaultCard = useCallback((id: string) => {
+    setCards(prev => prev.map(c => ({ ...c, isDefault: c.id === id })));
   }, []);
 
   const addCategory = useCallback((cat: Omit<CategoryItem, 'id'>) => {
@@ -322,6 +409,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       exportDate: new Date().toISOString(),
       userName,
       accounts,
+      cards,
       transactions,
       categories,
       recurring,
@@ -335,12 +423,13 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-  }, [userName, accounts, transactions, categories, recurring, quickTags]);
+  }, [userName, accounts, cards, transactions, categories, recurring, quickTags]);
 
   const exportCSV = useCallback(() => {
-    const headers = ['ID', 'Date', 'Type', 'Amount', 'Category', 'Account', 'Memo'];
+    const headers = ['ID', 'Date', 'Type', 'Amount', 'Category', 'Account', 'Card', 'Memo'];
     const rows = transactions.map(t => {
       const acc = accounts.find(a => a.id === t.accountId);
+      const crd = cards.find(c => c.id === t.cardId);
       return [
         t.id,
         t.date,
@@ -348,6 +437,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
         t.amount.toFixed(2),
         `"${t.category.replace(/"/g, '""')}"`,
         `"${(acc?.name || t.accountId).replace(/"/g, '""')}"`,
+        `"${(crd?.name || '').replace(/"/g, '""')}"`,
         `"${(t.memo || '').replace(/"/g, '""')}"`,
       ].join(',');
     });
@@ -360,13 +450,14 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-  }, [transactions, accounts]);
+  }, [transactions, accounts, cards]);
 
   const importJSON = useCallback((jsonData: string): boolean => {
     try {
       const parsed = JSON.parse(jsonData);
       if (Array.isArray(parsed.transactions)) setTransactions(parsed.transactions);
       if (Array.isArray(parsed.accounts)) setAccounts(parsed.accounts);
+      if (Array.isArray(parsed.cards)) setCards(parsed.cards);
       if (Array.isArray(parsed.categories)) setCategories(parsed.categories);
       if (Array.isArray(parsed.recurring)) setRecurring(parsed.recurring);
       if (Array.isArray(parsed.quickTags)) setQuickTags(parsed.quickTags);
@@ -381,6 +472,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const resetToSampleData = useCallback(() => {
     setTransactions(INITIAL_TRANSACTIONS);
     setAccounts(DEFAULT_ACCOUNTS);
+    setCards(DEFAULT_CARDS);
     setCategories(DEFAULT_CATEGORIES);
     setRecurring(DEFAULT_RECURRING);
     setQuickTags(DEFAULT_QUICK_TAGS);
@@ -393,6 +485,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const value: BudgetContextType = {
     transactions,
     accounts,
+    cards,
     categories,
     recurring,
     quickTags,
@@ -406,7 +499,12 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     updateAccount,
     deleteAccount,
     transferMoney,
+    addCard,
+    updateCard,
+    deleteCard,
+    setDefaultCard,
     addRecurringRule,
+    updateRecurringRule,
     toggleRecurringRule,
     deleteRecurringRule,
     addCategory,

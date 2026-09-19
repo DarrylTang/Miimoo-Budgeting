@@ -24,6 +24,17 @@ export default defineSchema({
     .index("by_type", ["type"])
     .index("by_isCustom", ["isCustom"]),
 
+  // Credit Cards
+  creditCards: defineTable({
+    name: v.string(),
+    cardColor: v.string(),
+    maxSpendLimit: v.number(),
+    minSpendRequirement: v.number(),
+    billingCycleStartDay: v.number(),
+    rewardCategories: v.array(v.string()),
+    isDefault: v.boolean(),
+  }).index("by_isDefault", ["isDefault"]),
+
   // Transactions
   transactions: defineTable({
     type: v.union(v.literal("expense"), v.literal("income"), v.literal("transfer")),
@@ -31,23 +42,28 @@ export default defineSchema({
     accountId: v.id("accounts"),
     toAccountId: v.optional(v.id("accounts")), // for transfers
     categoryId: v.optional(v.id("categories")), // optional for transfers
+    cardId: v.optional(v.id("creditCards")), // optional linked credit card
     date: v.number(), // timestamp in milliseconds
     memo: v.optional(v.string()),
   })
     .index("by_date", ["date"])
     .index("by_account", ["accountId"])
     .index("by_category", ["categoryId"])
-    .index("by_type", ["type"]),
+    .index("by_type", ["type"])
+    .index("by_card", ["cardId"]),
 
   // Recurring Rules
   recurringRules: defineTable({
     title: v.string(),
     amount: v.number(),
     type: v.union(v.literal("expense"), v.literal("income")),
-    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
+    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"), v.literal("yearly")),
     accountId: v.id("accounts"),
     categoryId: v.optional(v.id("categories")),
     nextRun: v.number(), // timestamp in milliseconds
+    startDate: v.optional(v.string()), // YYYY-MM-DD
+    dayOfMonth: v.optional(v.number()), // 1-31
+    dayOfWeek: v.optional(v.string()), // 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
     isActive: v.boolean(),
   })
     .index("by_isActive", ["isActive"])

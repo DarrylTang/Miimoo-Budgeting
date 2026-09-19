@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { SidebarDrawer } from '@/components/SidebarDrawer';
 import { HomeDashboard } from '@/components/HomeDashboard';
 import { AnalyticsView } from '@/components/AnalyticsView';
+import { CardsView } from '@/components/CardsView';
 import { NewEntryModal } from '@/components/NewEntryModal';
 import { ManageAccountsModal } from '@/components/ManageAccountsModal';
 import { RecurringModal } from '@/components/RecurringModal';
@@ -14,7 +15,7 @@ import { BottomNav, TabType } from '@/components/BottomNav';
 import { Transaction } from '@/types';
 
 export default function App() {
-  // Navigation tabs: 'home' | 'analytics' | 'accounts' | 'more'
+  // Navigation tabs: 'home' | 'analytics' | 'cards' | 'more'
   const [currentTab, setCurrentTab] = useState<TabType>('home');
 
   // Drawer and Modal toggles
@@ -40,11 +41,7 @@ export default function App() {
   };
 
   const handleTabChange = (tab: TabType) => {
-    if (tab === 'accounts') {
-      setIsAccountsOpen(true);
-    } else {
-      setCurrentTab(tab);
-    }
+    setCurrentTab(tab);
   };
 
   return (
@@ -73,6 +70,8 @@ export default function App() {
           )}
 
           {currentTab === 'analytics' && <AnalyticsView />}
+
+          {currentTab === 'cards' && <CardsView />}
         </main>
 
         {/* Fixed Mobile Bottom Dock Navigation */}

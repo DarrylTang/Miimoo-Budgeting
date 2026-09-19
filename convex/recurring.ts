@@ -1,7 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthenticatedUser } from "./auth";
-import { Doc } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 
 export interface EnrichedRecurringRule extends Doc<"recurringRules"> {
   account?: Doc<"accounts"> | null;
@@ -39,10 +39,13 @@ export const create = mutation({
     title: v.string(),
     amount: v.number(),
     type: v.union(v.literal("expense"), v.literal("income")),
-    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
+    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"), v.literal("yearly")),
     accountId: v.id("accounts"),
     categoryId: v.optional(v.id("categories")),
     nextRun: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    dayOfMonth: v.optional(v.number()),
+    dayOfWeek: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await getAuthenticatedUser(ctx);
@@ -66,10 +69,82 @@ export const create = mutation({
       accountId: args.accountId,
       categoryId: args.categoryId,
       nextRun,
+      startDate: args.startDate,
+      dayOfMonth: args.dayOfMonth,
+      dayOfWeek: args.dayOfWeek,
       isActive: true,
     });
 
     return ruleId;
+  },
+});
+
+/**
+ * Update an existing recurring rule schedule or details.
+ * Strictly preserves past transactions!
+ */
+export const update = mutation({
+  args: {
+    id: v.id("recurringRules"),
+    title: v.optional(v.string()),
+    amount: v.optional(v.number()),
+    type: v.optional(v.union(v.literal("expense"), v.literal("income"))),
+    frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"), v.literal("yearly"))),
+    accountId: v.optional(v.id("accounts")),
+    categoryId: v.optional(v.id("categories")),
+    nextRun: v.optional(v.number()),
+    startDate: v.optional(v.string()),
+    dayOfMonth: v.optional(v.number()),
+    dayOfWeek: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    await getAuthenticatedUser(ctx);
+
+    const rule = await ctx.db.get(args.id);
+    if (!rule) {
+      throw new Error("Recurring rule not found");
+    }
+
+    if (args.amount !== undefined && args.amount <= 0) {
+      throw new Error("Amount must be greater than zero");
+    }
+
+    if (args.accountId !== undefined) {
+      const account = await ctx.db.get(args.accountId);
+      if (!account) {
+        throw new Error("Account not found");
+      }
+    }
+
+    const patchData: {
+      title?: string;
+      amount?: number;
+      type?: "expense" | "income";
+      frequency?: "daily" | "weekly" | "monthly" | "yearly";
+      accountId?: Id<"accounts">;
+      categoryId?: Id<"categories">;
+      nextRun?: number;
+      startDate?: string;
+      dayOfMonth?: number;
+      dayOfWeek?: string;
+      isActive?: boolean;
+    } = {};
+
+    if (args.title !== undefined) patchData.title = args.title.trim();
+    if (args.amount !== undefined) patchData.amount = args.amount;
+    if (args.type !== undefined) patchData.type = args.type;
+    if (args.frequency !== undefined) patchData.frequency = args.frequency;
+    if (args.accountId !== undefined) patchData.accountId = args.accountId;
+    if (args.categoryId !== undefined) patchData.categoryId = args.categoryId;
+    if (args.nextRun !== undefined) patchData.nextRun = args.nextRun;
+    if (args.startDate !== undefined) patchData.startDate = args.startDate;
+    if (args.dayOfMonth !== undefined) patchData.dayOfMonth = args.dayOfMonth;
+    if (args.dayOfWeek !== undefined) patchData.dayOfWeek = args.dayOfWeek;
+    if (args.isActive !== undefined) patchData.isActive = args.isActive;
+
+    await ctx.db.patch(args.id, patchData);
+    return args.id;
   },
 });
 
@@ -171,6 +246,8 @@ export const applyDueRules = mutation({
         nextDate.setDate(nextDate.getDate() + 7);
       } else if (rule.frequency === "monthly") {
         nextDate.setMonth(nextDate.getMonth() + 1);
+      } else if (rule.frequency === "yearly") {
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
       }
 
       await ctx.db.patch(rule._id, {

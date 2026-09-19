@@ -25,6 +25,7 @@ export const seedInitialData = mutation({
       // Clear existing records if force seeding
       for (const t of await ctx.db.query("transactions").collect()) await ctx.db.delete(t._id);
       for (const r of await ctx.db.query("recurringRules").collect()) await ctx.db.delete(r._id);
+      for (const c of await ctx.db.query("creditCards").collect()) await ctx.db.delete(c._id);
       for (const m of await ctx.db.query("memoTags").collect()) await ctx.db.delete(m._id);
       for (const a of await ctx.db.query("accounts").collect()) await ctx.db.delete(a._id);
       for (const c of await ctx.db.query("categories").collect()) await ctx.db.delete(c._id);
@@ -106,7 +107,28 @@ export const seedInitialData = mutation({
       await ctx.db.insert("memoTags", item);
     }
 
-    // 5. Recurring Rules
+    // 5. Credit Cards
+    const dbsCardId = await ctx.db.insert("creditCards", {
+      name: "DBS Live Fresh",
+      cardColor: "from-[#FF5E62] to-[#FF9966]",
+      maxSpendLimit: 2500,
+      minSpendRequirement: 600,
+      billingCycleStartDay: 1,
+      rewardCategories: ["Food", "Shopping", "Entertainment"],
+      isDefault: true,
+    });
+
+    const citiCardId = await ctx.db.insert("creditCards", {
+      name: "Citi Cash Back",
+      cardColor: "from-[#0F2027] via-[#203A43] to-[#2C5364]",
+      maxSpendLimit: 3500,
+      minSpendRequirement: 800,
+      billingCycleStartDay: 1,
+      rewardCategories: ["Groceries", "Utilities", "Transportation"],
+      isDefault: false,
+    });
+
+    // 6. Recurring Rules
     await ctx.db.insert("recurringRules", {
       title: "Monthly Salary",
       amount: 1185.00,
@@ -115,6 +137,8 @@ export const seedInitialData = mutation({
       accountId: mainAccountId,
       categoryId: categoryMap.get("Salary"),
       nextRun: new Date(2026, 9, 1, 9, 0, 0).getTime(), // 1st October 2026
+      startDate: "2026-09-01",
+      dayOfMonth: 1,
       isActive: true,
     });
 
@@ -126,6 +150,8 @@ export const seedInitialData = mutation({
       accountId: mainAccountId,
       categoryId: categoryMap.get("Housing"),
       nextRun: new Date(2026, 9, 1, 9, 0, 0).getTime(),
+      startDate: "2026-09-01",
+      dayOfMonth: 1,
       isActive: true,
     });
 
@@ -137,6 +163,8 @@ export const seedInitialData = mutation({
       accountId: mainAccountId,
       categoryId: categoryMap.get("Utilities"),
       nextRun: new Date(2026, 9, 12, 9, 0, 0).getTime(),
+      startDate: "2026-09-12",
+      dayOfMonth: 12,
       isActive: true,
     });
 
@@ -148,10 +176,12 @@ export const seedInitialData = mutation({
       accountId: mainAccountId,
       categoryId: categoryMap.get("Health"),
       nextRun: new Date(2026, 9, 15, 9, 0, 0).getTime(),
+      startDate: "2026-09-15",
+      dayOfMonth: 15,
       isActive: true,
     });
 
-    // 6. September 2026 Transactions (Matching screenshot)
+    // 7. September 2026 Transactions (Matching screenshot)
     // Month Income: $1,185.00
     await ctx.db.insert("transactions", {
       type: "income",
@@ -177,6 +207,7 @@ export const seedInitialData = mutation({
       amount: 185.00,
       accountId: mainAccountId,
       categoryId: categoryMap.get("Utilities"),
+      cardId: citiCardId,
       date: new Date(2026, 8, 5, 14, 0, 0).getTime(),
       memo: "SP Services electricity and water",
     });
@@ -186,6 +217,7 @@ export const seedInitialData = mutation({
       amount: 143.93,
       accountId: mainAccountId,
       categoryId: categoryMap.get("Groceries"),
+      cardId: citiCardId,
       date: new Date(2026, 8, 8, 16, 30, 0).getTime(),
       memo: "FairPrice monthly staples",
     });
@@ -196,6 +228,7 @@ export const seedInitialData = mutation({
       amount: 18.75,
       accountId: mainAccountId,
       categoryId: categoryMap.get("Food"),
+      cardId: dbsCardId,
       date: new Date(2026, 8, 12, 19, 30, 0).getTime(),
       memo: "pizza",
     });

@@ -34,6 +34,7 @@ export const create = mutation({
     accountId: v.id("accounts"),
     toAccountId: v.optional(v.id("accounts")),
     categoryId: v.optional(v.id("categories")),
+    cardId: v.optional(v.id("creditCards")),
     date: v.optional(v.number()),
     memo: v.optional(v.string()),
   },
@@ -87,6 +88,7 @@ export const create = mutation({
       accountId: args.accountId,
       toAccountId: args.toAccountId,
       categoryId: args.categoryId,
+      cardId: args.cardId,
       date,
       memo: args.memo?.trim() || undefined,
     });
@@ -106,6 +108,7 @@ export const update = mutation({
     accountId: v.optional(v.id("accounts")),
     toAccountId: v.optional(v.id("accounts")),
     categoryId: v.optional(v.id("categories")),
+    cardId: v.optional(v.id("creditCards")),
     date: v.optional(v.number()),
     memo: v.optional(v.string()),
   },
@@ -188,6 +191,7 @@ export const update = mutation({
       accountId?: Id<"accounts">;
       toAccountId?: Id<"accounts">;
       categoryId?: Id<"categories">;
+      cardId?: Id<"creditCards">;
       date?: number;
       memo?: string;
     } = {};
@@ -197,6 +201,7 @@ export const update = mutation({
     if (args.accountId !== undefined) patchData.accountId = args.accountId;
     if (args.toAccountId !== undefined) patchData.toAccountId = args.toAccountId;
     if (args.categoryId !== undefined) patchData.categoryId = args.categoryId;
+    if (args.cardId !== undefined) patchData.cardId = args.cardId;
     if (args.date !== undefined) patchData.date = args.date;
     if (args.memo !== undefined) patchData.memo = args.memo.trim() || undefined;
 
@@ -252,6 +257,7 @@ export interface EnrichedTransaction extends Doc<"transactions"> {
   category?: Doc<"categories"> | null;
   account?: Doc<"accounts"> | null;
   toAccount?: Doc<"accounts"> | null;
+  card?: Doc<"creditCards"> | null;
 }
 
 export interface DayGroup {
@@ -298,9 +304,10 @@ export const listByMonth = query({
         )
       : allInMonth;
 
-    // Cache categories and accounts
+    // Cache categories, accounts, and cards
     const categoryCache = new Map<string, Doc<"categories"> | null>();
     const accountCache = new Map<string, Doc<"accounts"> | null>();
+    const cardCache = new Map<string, Doc<"creditCards"> | null>();
 
     const enrichedList: EnrichedTransaction[] = [];
     let totalIncome = 0;
@@ -332,6 +339,15 @@ export const listByMonth = query({
         toAccount = accountCache.get(t.toAccountId) ?? null;
       }
 
+      // Enrich card
+      let card: Doc<"creditCards"> | null = null;
+      if (t.cardId) {
+        if (!cardCache.has(t.cardId)) {
+          cardCache.set(t.cardId, await ctx.db.get(t.cardId));
+        }
+        card = cardCache.get(t.cardId) ?? null;
+      }
+
       if (t.type === "income") {
         totalIncome += t.amount;
       } else if (t.type === "expense") {
@@ -343,6 +359,7 @@ export const listByMonth = query({
         category,
         account,
         toAccount,
+        card,
       });
     }
 
