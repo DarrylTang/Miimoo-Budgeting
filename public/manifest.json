@@ -1,0 +1,18 @@
+{
+  "name": "Miimoo Budgeting",
+  "short_name": "Miimoo",
+  "description": "Clean, mobile-first personal budgeting and expense tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F8FA",
+  "theme_color": "#F46C6C",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
