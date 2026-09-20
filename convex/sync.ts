@@ -10,8 +10,13 @@ const PRIMARY_SYNC_KEY = "miimoo_primary";
  */
 export function verifyPin(pin: string): void {
   const masterPin = process.env.NEXT_PUBLIC_MASTER_PIN || process.env.MASTER_PIN;
-  if (!masterPin || !pin || pin.trim() !== masterPin.trim()) {
-    throw new Error("Unauthorized: Invalid Master PIN");
+  if (!masterPin) {
+    throw new Error(
+      "Master PIN is not configured on Convex. Please set NEXT_PUBLIC_MASTER_PIN or MASTER_PIN in your Convex Dashboard Settings -> Environment Variables."
+    );
+  }
+  if (!pin || pin.trim() !== masterPin.trim()) {
+    throw new Error("Unauthorized: Invalid Master PIN.");
   }
 }
 
