@@ -178,7 +178,7 @@ interface BudgetState {
 
 interface BudgetContextType extends BudgetState {
   isUnlocked: boolean;
-  unlockApp: (pin: string) => boolean;
+  unlockApp: (pin: string) => Promise<boolean>;
   lockApp: () => void;
   setMasterPin: (newPin: string) => void;
   hasCustomMasterPin: boolean;
@@ -358,6 +358,8 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isLoaded, transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName]);
 
+  const syncWithCloudRef = useRef<((direction?: 'push' | 'pull' | 'both') => Promise<any>) | null>(null);
+
   const getMasterPin = useCallback(() => {
     try {
       const custom = localStorage.getItem(CUSTOM_PIN_KEY);
@@ -366,9 +368,13 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     return (process.env.NEXT_PUBLIC_MASTER_PIN || '').trim();
   }, []);
 
-  const unlockApp = useCallback((pin: string) => {
+  const unlockApp = useCallback(async (pin: string): Promise<boolean> => {
+    const trimmed = pin.trim();
+    if (!trimmed) return false;
+
+    // 1. Fast local verification: Check cached custom PIN or build-time env PIN
     const requiredPin = getMasterPin();
-    if (pin.trim() === requiredPin) {
+    if (requiredPin && trimmed === requiredPin) {
       localStorage.setItem(AUTH_TOKEN_KEY, 'unlocked');
       try {
         document.cookie = 'miimoo_auth=unlocked; path=/; max-age=31536000; SameSite=Lax';
@@ -376,6 +382,34 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       setIsUnlocked(true);
       return true;
     }
+
+    // 2. Cloud verification fallback: Validate against Convex backend directly
+    // This allows fresh devices (like mobile phones) to authenticate seamlessly even before
+    // local storage is populated or if NEXT_PUBLIC_MASTER_PIN was not inlined at build time.
+    const client = getConvexClient();
+    if (client) {
+      try {
+        const res = await client.query(api.sync.verifyMasterPin, { pin: trimmed });
+        if (res && res.valid) {
+          localStorage.setItem(CUSTOM_PIN_KEY, trimmed);
+          localStorage.setItem(AUTH_TOKEN_KEY, 'unlocked');
+          try {
+            document.cookie = 'miimoo_auth=unlocked; path=/; max-age=31536000; SameSite=Lax';
+          } catch (e) {}
+          setIsUnlocked(true);
+          setHasCustomMasterPin(true);
+
+          // Immediately pull cloud data to populate the new device
+          if (syncWithCloudRef.current) {
+            syncWithCloudRef.current('pull');
+          }
+          return true;
+        }
+      } catch (e) {
+        console.warn('Convex remote PIN verification fallback failed:', e);
+      }
+    }
+
     return false;
   }, [getMasterPin]);
 
@@ -848,6 +882,8 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       isSyncingRef.current = false;
     }
   }, [getMasterPin, mergeSnapshotsLocally, applyMergedData]);
+
+  syncWithCloudRef.current = syncWithCloud;
 
   const syncNow = useCallback(async () => {
     return syncWithCloud('both');

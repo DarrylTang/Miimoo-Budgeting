@@ -14,52 +14,54 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isShaking, setIsShaking] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  // Maximum pin length typically 4 to 6 digits
-  const PIN_LENGTH = 4;
-
-  const handleKeyPress = useCallback((val: string) => {
+  const attemptUnlock = useCallback(async (candidatePin: string) => {
+    if (!candidatePin || candidatePin.length < 4 || isVerifying) return;
+    setIsVerifying(true);
     setError(false);
     setErrorMessage('');
-    if (pin.length < 6) {
+
+    try {
+      const success = await unlockApp(candidatePin);
+      if (!success) {
+        triggerError('Incorrect Master Passcode.');
+      }
+    } catch (e: any) {
+      triggerError(e?.message || 'Verification failed');
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [unlockApp, isVerifying]);
+
+  const handleKeyPress = useCallback((val: string) => {
+    if (isVerifying) return;
+    setError(false);
+    setErrorMessage('');
+    if (pin.length < 8) {
       const nextPin = pin + val;
       setPin(nextPin);
 
-      // If reached 4 digits, attempt unlock
-      if (nextPin.length === PIN_LENGTH) {
-        const success = unlockApp(nextPin);
-        if (!success) {
-          // If 4 digits failed, user might have a 5 or 6 digit pin, so wait unless it was strictly incorrect
-          // We can give slight delay then check
-          setTimeout(() => {
-            if (nextPin.length === 4) {
-              const retrySuccess = unlockApp(nextPin);
-              if (!retrySuccess) {
-                triggerError('Incorrect PIN. Please try again.');
-              }
-            }
-          }, 200);
-        }
-      } else if (nextPin.length === 6) {
-        const success = unlockApp(nextPin);
-        if (!success) {
-          triggerError('Incorrect Master PIN.');
-        }
+      // Auto-attempt when candidate reaches standard lengths (4 or 6 digits)
+      if (nextPin.length === 4 || nextPin.length === 6) {
+        attemptUnlock(nextPin);
       }
     }
-  }, [pin, unlockApp]);
+  }, [pin, isVerifying, attemptUnlock]);
 
   const handleDelete = useCallback(() => {
+    if (isVerifying) return;
     setError(false);
     setErrorMessage('');
     setPin((prev) => prev.slice(0, -1));
-  }, []);
+  }, [isVerifying]);
 
   const handleClear = useCallback(() => {
+    if (isVerifying) return;
     setError(false);
     setErrorMessage('');
     setPin('');
-  }, []);
+  }, [isVerifying]);
 
   const triggerError = (msg: string) => {
     setError(true);
@@ -73,11 +75,8 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
 
   const handleManualSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!pin) return;
-    const success = unlockApp(pin);
-    if (!success) {
-      triggerError('Incorrect Master PIN.');
-    }
+    if (!pin || isVerifying) return;
+    attemptUnlock(pin);
   };
 
   // Keyboard support for desktop/physical keyboards
@@ -154,6 +153,14 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
           })}
         </div>
 
+        {/* Verifying Feedback */}
+        {isVerifying && (
+          <div className="flex items-center gap-1.5 text-xs text-[#2C5E6E] font-medium animate-pulse mb-2">
+            <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-500" />
+            <span>Verifying passcode...</span>
+          </div>
+        )}
+
         {/* Error Feedback */}
         {error && (
           <div className="flex items-center gap-1.5 text-xs text-[#E53E3E] font-bold animate-in fade-in slide-in-from-top-1 duration-150">
@@ -171,7 +178,8 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
               key={digit}
               type="button"
               onClick={() => handleKeyPress(digit)}
-              className="h-14 sm:h-16 rounded-2xl bg-white hover:bg-gray-50 active:bg-gray-100 text-[#2D3748] font-bold text-xl shadow-xs border border-gray-100/80 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+              disabled={isVerifying}
+              className="h-14 sm:h-16 rounded-2xl bg-white hover:bg-gray-50 active:bg-gray-100 text-[#2D3748] font-bold text-xl shadow-xs border border-gray-100/80 flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-60"
             >
               {digit}
             </button>
@@ -181,7 +189,8 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
           <button
             type="button"
             onClick={handleClear}
-            className="h-14 sm:h-16 rounded-2xl bg-gray-100/70 hover:bg-gray-200/70 active:bg-gray-200 text-gray-500 font-bold text-xs uppercase tracking-wider flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+            disabled={isVerifying}
+            className="h-14 sm:h-16 rounded-2xl bg-gray-100/70 hover:bg-gray-200/70 active:bg-gray-200 text-gray-500 font-bold text-xs uppercase tracking-wider flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-60"
           >
             Clear
           </button>
@@ -189,7 +198,8 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
           <button
             type="button"
             onClick={() => handleKeyPress('0')}
-            className="h-14 sm:h-16 rounded-2xl bg-white hover:bg-gray-50 active:bg-gray-100 text-[#2D3748] font-bold text-xl shadow-xs border border-gray-100/80 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+            disabled={isVerifying}
+            className="h-14 sm:h-16 rounded-2xl bg-white hover:bg-gray-50 active:bg-gray-100 text-[#2D3748] font-bold text-xl shadow-xs border border-gray-100/80 flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-60"
           >
             0
           </button>
@@ -197,12 +207,35 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
           <button
             type="button"
             onClick={handleDelete}
+            disabled={isVerifying}
             aria-label="Backspace"
-            className="h-14 sm:h-16 rounded-2xl bg-gray-100/70 hover:bg-gray-200/70 active:bg-gray-200 text-gray-600 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+            className="h-14 sm:h-16 rounded-2xl bg-gray-100/70 hover:bg-gray-200/70 active:bg-gray-200 text-gray-600 flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-60"
           >
             <Delete className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Prominent Mobile Unlock Button (visible when candidate pin >= 4) */}
+        {pin.length >= 4 && (
+          <button
+            type="button"
+            onClick={() => attemptUnlock(pin)}
+            disabled={isVerifying}
+            className="w-full mt-3 h-12 rounded-2xl bg-[#2C5E6E] hover:bg-[#234C59] active:scale-[0.98] text-white font-bold text-sm shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+          >
+            {isVerifying ? (
+              <>
+                <Sparkles className="w-4 h-4 animate-spin text-amber-300" />
+                <span>Verifying Passcode...</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-4 h-4 text-amber-300" />
+                <span>Unlock Dashboard</span>
+              </>
+            )}
+          </button>
+        )}
 
         {/* Security Assurance Badge */}
         <div className="mt-5 text-center flex flex-col items-center justify-center text-[10px] text-gray-400 space-y-1">

@@ -110,6 +110,25 @@ export const pull = query({
 });
 
 /**
+ * Verify Master PIN against server environment variables.
+ * Allows fresh devices (e.g. mobile phones) to authenticate cleanly
+ * even before local storage or build-time env vars are set.
+ */
+export const verifyMasterPin = query({
+  args: {
+    pin: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const masterPin = process.env.NEXT_PUBLIC_MASTER_PIN || process.env.MASTER_PIN;
+    if (!masterPin) {
+      return { valid: false, reason: "NOT_CONFIGURED" as const };
+    }
+    const isValid = !!args.pin && args.pin.trim() === masterPin.trim();
+    return { valid: isValid, reason: (isValid ? "OK" : "INVALID_PIN") as "OK" | "INVALID_PIN" };
+  },
+});
+
+/**
  * Push and merge client data into cloud sync store.
  */
 export const push = mutation({
