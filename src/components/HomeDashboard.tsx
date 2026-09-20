@@ -18,6 +18,7 @@ import {
   CreditCard,
   Repeat,
   Sparkles,
+  Check,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 import { CategoryIcon } from '@/components/CategoryIcon';
@@ -81,6 +82,12 @@ export function HomeDashboard({
   const [collapsedDates, setCollapsedDates] = useState<Record<string, boolean>>({});
   const [activeActionTxId, setActiveActionTxId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Category filter state
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
+  const [isCategoryFilterOpen, setIsCategoryFilterOpen] = useState(false);
+  const [catModalTypeFilter, setCatModalTypeFilter] = useState<'all' | 'expense' | 'income'>('all');
+  const [catModalSearch, setCatModalSearch] = useState('');
 
   useEffect(() => {
     if (isSearchOpen) {
@@ -218,6 +225,58 @@ export function HomeDashboard({
     );
   }, [recurring, searchQuery, isSearchOpen]);
 
+  // Active Category item definition
+  const activeCategoryDef = useMemo(() => {
+    if (!selectedCategoryFilter || selectedCategoryFilter === 'all') return null;
+    return categories.find((c) => c.name === selectedCategoryFilter) || null;
+  }, [categories, selectedCategoryFilter]);
+
+  // Base transactions for the current period (before category filter)
+  const basePeriodTransactions = useMemo(() => {
+    const monthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    return transactions.filter((tx) => {
+      // Month Scope: If search is closed OR searchScope is 'current_month', match only current month
+      if (!isSearchOpen || searchScope === 'current_month') {
+        if (!tx.date.startsWith(monthPrefix)) return false;
+      }
+
+      // Account filter
+      if (selectedAccountId !== 'all' && tx.accountId !== selectedAccountId) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [transactions, currentYear, currentMonth, isSearchOpen, searchScope, selectedAccountId]);
+
+  // Pre-calculate count and sum for each category in current period
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; total: number }> = {};
+
+    basePeriodTransactions.forEach((tx) => {
+      if (!stats[tx.category]) {
+        stats[tx.category] = { count: 0, total: 0 };
+      }
+      stats[tx.category].count += 1;
+      stats[tx.category].total += tx.amount;
+    });
+
+    return stats;
+  }, [basePeriodTransactions]);
+
+  // Modal filtered categories list
+  const filteredCategoriesForModal = useMemo(() => {
+    return categories.filter((cat) => {
+      if (catModalTypeFilter !== 'all') {
+        if (cat.type !== 'both' && cat.type !== catModalTypeFilter) return false;
+      }
+      if (catModalSearch.trim()) {
+        return cat.name.toLowerCase().includes(catModalSearch.trim().toLowerCase());
+      }
+      return true;
+    });
+  }, [categories, catModalTypeFilter, catModalSearch]);
+
   // Filtered transactions (searching across all months and across all data)
   const displayTransactions = useMemo(() => {
     const monthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
@@ -232,6 +291,11 @@ export function HomeDashboard({
       // 2. Account filter
       if (selectedAccountId !== 'all' && tx.accountId !== selectedAccountId) {
         return false;
+      }
+
+      // 2.5 Category filter
+      if (selectedCategoryFilter && selectedCategoryFilter !== 'all') {
+        if (tx.category !== selectedCategoryFilter) return false;
       }
 
       // 3. Search type filter
@@ -290,6 +354,7 @@ export function HomeDashboard({
     currentYear,
     currentMonth,
     selectedAccountId,
+    selectedCategoryFilter,
     isSearchOpen,
     searchScope,
     searchTypeFilter,
@@ -735,9 +800,43 @@ export function HomeDashboard({
       {/* Period / Month Bar */}
       <div className="flex items-center justify-between px-2 py-1 select-none">
         {/* Left: Filter / List Icon */}
-        <div className="flex items-center gap-1 text-gray-500">
-          <SlidersHorizontal className="w-4 h-4 text-gray-500" />
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsCategoryFilterOpen(true)}
+          aria-label="Filter transactions by category"
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer ${
+            selectedCategoryFilter && selectedCategoryFilter !== 'all'
+              ? 'bg-[#E8F8F5] text-[#0D9488] ring-1 ring-[#58B5A7]/50 shadow-2xs font-bold'
+              : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100/80 active:scale-95'
+          }`}
+          title={
+            selectedCategoryFilter && selectedCategoryFilter !== 'all'
+              ? `Filtered by ${selectedCategoryFilter}`
+              : 'Filter by category'
+          }
+        >
+          <div className="relative flex items-center justify-center">
+            <SlidersHorizontal
+              className={`w-4 h-4 ${
+                selectedCategoryFilter && selectedCategoryFilter !== 'all'
+                  ? 'text-[#0D9488]'
+                  : 'text-gray-500'
+              }`}
+            />
+            {selectedCategoryFilter && selectedCategoryFilter !== 'all' && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#0D9488] ring-1.5 ring-white" />
+            )}
+          </div>
+          {selectedCategoryFilter && selectedCategoryFilter !== 'all' ? (
+            <span className="text-xs font-bold truncate max-w-[85px]">
+              {selectedCategoryFilter}
+            </span>
+          ) : (
+            <span className="text-xs font-medium text-gray-400 hidden xs:inline">
+              Filter
+            </span>
+          )}
+        </button>
 
         {/* Center: Month Selector (< Sep 2026 >) or Global Search Scope indicator */}
         {isSearchOpen && searchScope === 'all_months' ? (
@@ -790,6 +889,44 @@ export function HomeDashboard({
         )}
       </div>
 
+      {/* Active Category Filter Chip */}
+      {selectedCategoryFilter && selectedCategoryFilter !== 'all' && (
+        <div className="flex items-center justify-between px-3.5 py-2 bg-gradient-to-r from-[#E8F8F5] to-white rounded-2xl border border-[#58B5A7]/30 shadow-2xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs font-medium text-gray-500 shrink-0">Filtered by:</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white rounded-xl border border-gray-100 shadow-2xs min-w-0">
+              {activeCategoryDef && (
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                  style={{
+                    backgroundColor: activeCategoryDef.bgColor || '#FFF0F0',
+                    color: activeCategoryDef.color || '#F46C6C',
+                  }}
+                >
+                  <CategoryIcon name={activeCategoryDef.icon} className="w-2.5 h-2.5" />
+                </div>
+              )}
+              <span className="text-xs font-bold text-[#2D3748] truncate">
+                {selectedCategoryFilter}
+              </span>
+              <span className="text-[10px] font-bold text-[#0D9488] bg-[#E8F8F5] px-1.5 py-0.2 rounded-md shrink-0">
+                {displayTransactions.length}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryFilter(null)}
+            className="flex items-center gap-1 text-xs font-semibold text-gray-400 hover:text-red-500 hover:bg-white px-2 py-1 rounded-lg transition-colors cursor-pointer shrink-0"
+            title="Clear category filter"
+            aria-label="Clear category filter"
+          >
+            <span>Clear</span>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Grouped Date Transaction Feed */}
       {groupedByDate.length === 0 ? (
         <div className="w-full bg-white rounded-3xl p-8 text-center card-shadow border border-gray-100/80">
@@ -798,7 +935,11 @@ export function HomeDashboard({
           </div>
           <h4 className="font-bold text-sm text-[#2D3748] mb-1">No transactions found</h4>
           <p className="text-xs text-gray-400 mb-4">
-            {searchQuery
+            {selectedCategoryFilter && selectedCategoryFilter !== 'all'
+              ? `No transactions in "${selectedCategoryFilter}" found for ${
+                  searchScope === 'all_months' ? 'all months' : monthTitle
+                }`
+              : searchQuery
               ? `No transactions matching "${searchQuery}" found across ${
                   searchScope === 'all_months' ? 'all months' : monthTitle
                 }`
@@ -806,7 +947,14 @@ export function HomeDashboard({
                   searchScope === 'all_months' ? 'any month' : monthTitle
                 }`}
           </p>
-          {searchQuery ? (
+          {selectedCategoryFilter && selectedCategoryFilter !== 'all' ? (
+            <button
+              onClick={() => setSelectedCategoryFilter(null)}
+              className="py-2 px-4 bg-gray-100 hover:bg-gray-200 text-[#2D3748] rounded-xl text-xs font-bold transition-all"
+            >
+              Clear Category Filter
+            </button>
+          ) : searchQuery ? (
             <button
               onClick={() => setSearchQuery('')}
               className="py-2 px-4 bg-gray-100 hover:bg-gray-200 text-[#2D3748] rounded-xl text-xs font-bold transition-all"
@@ -993,6 +1141,269 @@ export function HomeDashboard({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Category Filter Modal / Bottom Sheet */}
+      {isCategoryFilterOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center select-none">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-200"
+            onClick={() => setIsCategoryFilterOpen(false)}
+          />
+
+          {/* Modal Container */}
+          <div className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+            {/* Header */}
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsCategoryFilterOpen(false)}
+                aria-label="Close category filter"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="text-center">
+                <h2 className="font-bold text-base text-[#2D3748]">
+                  Filter by Category
+                </h2>
+                <p className="text-[11px] text-gray-400 font-medium">
+                  {isSearchOpen && searchScope === 'all_months' ? 'All Months & History' : monthTitle}
+                </p>
+              </div>
+
+              <div className="w-8 flex justify-end">
+                {selectedCategoryFilter && selectedCategoryFilter !== 'all' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategoryFilter(null);
+                      setIsCategoryFilterOpen(false);
+                    }}
+                    className="text-xs font-bold text-[#F46C6C] hover:underline"
+                  >
+                    Reset
+                  </button>
+                ) : (
+                  <div className="w-8" />
+                )}
+              </div>
+            </div>
+
+            {/* Filter controls & Search */}
+            <div className="px-5 pt-3 pb-3 space-y-2.5 border-b border-gray-100/80 bg-gray-50/50">
+              {/* Type Filter Pills */}
+              <div className="flex bg-[#EAECEF] p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setCatModalTypeFilter('all')}
+                  className={`flex-1 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    catModalTypeFilter === 'all'
+                      ? 'bg-white text-[#2D3748] shadow-xs'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  All ({categories.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatModalTypeFilter('expense')}
+                  className={`flex-1 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    catModalTypeFilter === 'expense'
+                      ? 'bg-[#FF7676] text-white shadow-xs'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  Expense ({categories.filter((c) => c.type === 'expense' || c.type === 'both').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatModalTypeFilter('income')}
+                  className={`flex-1 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    catModalTypeFilter === 'income'
+                      ? 'bg-[#58B5A7] text-white shadow-xs'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  Income ({categories.filter((c) => c.type === 'income' || c.type === 'both').length})
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={catModalSearch}
+                  onChange={(e) => setCatModalSearch(e.target.value)}
+                  placeholder="Search categories..."
+                  className="w-full pl-8 pr-7 py-1.5 bg-white border border-gray-200 rounded-xl text-xs text-[#2D3748] placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#58B5A7]"
+                />
+                {catModalSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCatModalSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Categories List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar">
+              {/* "All Categories" Row */}
+              {(!catModalSearch || 'all categories'.includes(catModalSearch.toLowerCase())) &&
+                catModalTypeFilter === 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategoryFilter(null);
+                      setIsCategoryFilterOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all text-left cursor-pointer ${
+                      !selectedCategoryFilter || selectedCategoryFilter === 'all'
+                        ? 'bg-[#E8F8F5]/70 border-[#58B5A7] shadow-xs ring-1 ring-[#58B5A7]/30'
+                        : 'bg-white border-gray-100 hover:border-gray-200 hover:bg-gray-50/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-[#E8F8F5] text-[#0D9488] flex items-center justify-center shrink-0 shadow-2xs">
+                        <SlidersHorizontal className="w-5 h-5 stroke-[2.2]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-[#2D3748]">
+                            All Categories
+                          </span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600">
+                            All
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {basePeriodTransactions.length}{' '}
+                          {basePeriodTransactions.length === 1 ? 'transaction' : 'transactions'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0 ml-2">
+                      {!selectedCategoryFilter || selectedCategoryFilter === 'all' ? (
+                        <div className="w-6 h-6 rounded-full bg-[#0D9488] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        </div>
+                      ) : (
+                        <div className="w-6 h-6 rounded-full border border-gray-200 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                )}
+
+              {/* Individual Categories */}
+              {filteredCategoriesForModal.map((cat) => {
+                const isSelected = selectedCategoryFilter === cat.name;
+                const stats = categoryStats[cat.name] || { count: 0, total: 0 };
+
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategoryFilter(isSelected ? null : cat.name);
+                      setIsCategoryFilterOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all text-left cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#E8F8F5]/70 border-[#58B5A7] shadow-xs ring-1 ring-[#58B5A7]/30'
+                        : 'bg-white border-gray-100 hover:border-gray-200 hover:bg-gray-50/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-2xs"
+                        style={{
+                          backgroundColor: cat.bgColor || '#FFF0F0',
+                          color: cat.color || '#F46C6C',
+                        }}
+                      >
+                        <CategoryIcon name={cat.icon} className="w-5 h-5" strokeWidth={2.2} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-[#2D3748] truncate">
+                            {cat.name}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                              cat.type === 'expense'
+                                ? 'bg-[#FFF0F0] text-[#E53E3E]'
+                                : cat.type === 'income'
+                                ? 'bg-[#E8F8F5] text-[#0D9488]'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {cat.type === 'expense' ? 'Expense' : cat.type === 'income' ? 'Income' : 'Both'}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {stats.count === 0 ? (
+                            '0 transactions'
+                          ) : (
+                            <>
+                              {stats.count} {stats.count === 1 ? 'transaction' : 'transactions'}
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0 ml-2">
+                      <div className="text-right">
+                        <span
+                          className={`text-xs font-bold block ${
+                            stats.count === 0
+                              ? 'text-gray-300'
+                              : cat.type === 'expense'
+                              ? 'text-[#E53E3E]'
+                              : cat.type === 'income'
+                              ? 'text-[#38A169]'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {stats.count === 0
+                            ? '$0.00'
+                            : `${cat.type === 'expense' ? '-$' : cat.type === 'income' ? '+$' : '$'}${stats.total.toLocaleString(
+                                'en-US',
+                                { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                              )}`}
+                        </span>
+                      </div>
+
+                      {isSelected ? (
+                        <div className="w-6 h-6 rounded-full bg-[#0D9488] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        </div>
+                      ) : (
+                        <div className="w-6 h-6 rounded-full border border-gray-200 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+
+              {filteredCategoriesForModal.length === 0 && (
+                <div className="py-8 text-center text-gray-400 text-xs">
+                  No categories found matching &quot;{catModalSearch}&quot;
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

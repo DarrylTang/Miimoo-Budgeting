@@ -10,6 +10,8 @@ import {
   CheckCircle,
   AlertCircle,
   HardDrive,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 
@@ -23,7 +25,6 @@ export function DataCenterModal({ isOpen, onClose }: DataCenterModalProps) {
     exportJSON,
     exportCSV,
     importJSON,
-    resetToSampleData,
     loadDemoData,
     resetToCleanState,
     transactions,
@@ -34,6 +35,7 @@ export function DataCenterModal({ isOpen, onClose }: DataCenterModalProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   if (!isOpen) return null;
 
@@ -193,35 +195,114 @@ export function DataCenterModal({ isOpen, onClose }: DataCenterModalProps) {
             />
           </div>
 
-          {/* Reset & Demo data buttons */}
-          <div className="pt-2 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                loadDemoData();
-                setStatusMsg({ type: 'success', text: 'Loaded demo transactions for Sep 2026.' });
-                setTimeout(() => setStatusMsg(null), 3000);
-              }}
-              className="py-2.5 px-3 rounded-xl bg-gray-100 text-[#4A5568] hover:bg-gray-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Load Demo Data</span>
-            </button>
+          {/* Sample Data & Reset Dedicated Section */}
+          <div className="pt-2 border-t border-gray-100 space-y-3">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[#A0AEC0]">
+                Sample Data & Reset
+              </h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Populate demo transactions or wipe everything to start fresh
+              </p>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                resetToCleanState();
-                setStatusMsg({ type: 'success', text: 'All data cleared to fresh personal clean state.' });
-                setTimeout(() => setStatusMsg(null), 3000);
-              }}
-              className="py-2.5 px-3 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <span>Clear to Fresh Slate</span>
-            </button>
+            <div className="space-y-2.5">
+              {/* Load Demo Data */}
+              <div className="p-3.5 bg-gray-50 hover:bg-gray-100/80 rounded-2xl border border-gray-200/70 flex items-center justify-between gap-3 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-white border border-gray-200 text-[#4A5568] flex items-center justify-center shrink-0 shadow-2xs">
+                    <RotateCcw className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-xs font-bold text-[#2D3748]">Load Demo Data</span>
+                    <span className="text-[11px] text-gray-500 block truncate">
+                      Sample accounts & Sep 2026 records
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    loadDemoData();
+                    setStatusMsg({ type: 'success', text: 'Loaded demo transactions for Sep 2026.' });
+                    setTimeout(() => setStatusMsg(null), 3500);
+                  }}
+                  className="px-3.5 py-2 bg-white hover:bg-gray-50 active:scale-95 text-[#2D3748] text-xs font-semibold rounded-xl border border-gray-200 shadow-2xs shrink-0 transition-all cursor-pointer"
+                >
+                  Load Demo
+                </button>
+              </div>
+
+              {/* Clear to Fresh Slate */}
+              <div className="p-3.5 bg-red-50/60 hover:bg-red-50 rounded-2xl border border-red-100 flex items-center justify-between gap-3 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-red-100 text-[#E53E3E] flex items-center justify-center shrink-0 shadow-2xs">
+                    <Trash2 className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-xs font-bold text-[#E53E3E]">Clear to Fresh Slate</span>
+                    <span className="text-[11px] text-red-600/70 block truncate">
+                      Permanently wipe all records & accounts
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowClearConfirm(true)}
+                  className="px-3.5 py-2 bg-[#E53E3E] hover:bg-[#C53030] active:scale-95 text-white text-xs font-semibold rounded-xl shadow-2xs shrink-0 transition-all cursor-pointer"
+                >
+                  Clear Slate
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal for Clear Slate */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150 border border-gray-100">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-red-100 text-[#E53E3E] flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-sm text-[#2D3748]">Reset to Fresh Slate?</h3>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                  This will permanently delete all your accounts, transactions, recurring rules, and custom categories from local storage.
+                </p>
+                <div className="mt-2.5 p-2.5 bg-amber-50 rounded-xl border border-amber-200/60 text-[11px] text-amber-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>Recommendation: Use <strong>Backup Now (JSON)</strong> before clearing if you wish to restore later.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="py-2.5 px-3 rounded-xl border border-gray-200 text-xs font-semibold text-[#4A5568] hover:bg-gray-50 active:scale-95 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetToCleanState();
+                  setShowClearConfirm(false);
+                  setStatusMsg({ type: 'success', text: 'All data cleared to fresh clean state.' });
+                  setTimeout(() => setStatusMsg(null), 3500);
+                }}
+                className="py-2.5 px-3 rounded-xl bg-[#E53E3E] hover:bg-[#C53030] text-xs font-semibold text-white active:scale-95 shadow-xs transition-all cursor-pointer"
+              >
+                Yes, Clear All Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

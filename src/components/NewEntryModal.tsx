@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
@@ -76,8 +76,29 @@ export function NewEntryModal({
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCatName, setNewCatName] = useState('');
 
+  // Track modal open state and editing transaction across renders
+  const wasOpenRef = useRef(false);
+  const prevEditingTxRef = useRef<Transaction | null | undefined>(undefined);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
   // Initialize form when opened or editing
   useEffect(() => {
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      return;
+    }
+
+    const isNewlyOpened = !wasOpenRef.current;
+    const isEditingTxChanged = editingTransaction !== prevEditingTxRef.current;
+
+    wasOpenRef.current = true;
+    prevEditingTxRef.current = editingTransaction;
+
+    // Only reset/initialize state when the modal opens for a new session or editingTransaction changes
+    if (!isNewlyOpened && !isEditingTxChanged) {
+      return;
+    }
+
     if (editingTransaction) {
       setType(editingTransaction.type);
       setAmountStr(editingTransaction.amount.toString());
@@ -90,6 +111,8 @@ export function NewEntryModal({
       setDateStr(editingTransaction.date);
       setMemo(editingTransaction.memo || '');
       setIsCalculatorOpen(false);
+      setCalcExpression('');
+      setCalcPreview(null);
     } else {
       setType('expense');
       setAmountStr('0');
@@ -115,6 +138,7 @@ export function NewEntryModal({
       setCalcPreview(null);
     }
   }, [editingTransaction, isOpen, accounts, cards, activeAccountId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!isOpen) return null;
 
@@ -230,9 +254,12 @@ export function NewEntryModal({
     }
 
     if (keepOpen) {
-      // Reset amount and memo for rapid entry
+      // Reset amount and memo for rapid entry, keeping category, account, card, date, and type intact
       setAmountStr('0');
       setMemo('');
+      setIsCalculatorOpen(false);
+      setCalcExpression('');
+      setCalcPreview(null);
     } else {
       onClose();
     }
