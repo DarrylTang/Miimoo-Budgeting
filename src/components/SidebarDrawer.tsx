@@ -18,8 +18,25 @@ import {
   Lock,
   KeyRound,
   Check,
+  Cloud,
+  RefreshCw,
+  AlertCircle,
+  WifiOff,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
+
+function getRelativeTimeString(timestamp: number | null): string {
+  if (!timestamp) return 'Never';
+  const diff = Math.max(0, Date.now() - timestamp);
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 interface SidebarDrawerProps {
   isOpen: boolean;
@@ -55,6 +72,11 @@ export function SidebarDrawer({
     accounts,
     transactions,
     categories,
+    isSyncing,
+    lastSyncedAt,
+    syncStatus,
+    syncError,
+    syncNow,
   } = useBudget();
 
   const [isEditingName, setIsEditingName] = useState(false);
@@ -65,8 +87,26 @@ export function SidebarDrawer({
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [pinSuccess, setPinSuccess] = useState(false);
+  const [syncToast, setSyncToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   if (!isOpen) return null;
+
+  const handleManualSync = async () => {
+    try {
+      const res = await syncNow();
+      setSyncToast({
+        message: res.message,
+        type: res.success ? 'success' : 'error',
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+    } catch (err: any) {
+      setSyncToast({
+        message: err?.message || 'Sync failed',
+        type: 'error',
+      });
+      setTimeout(() => setSyncToast(null), 3500);
+    }
+  };
 
   const handleSaveName = () => {
     if (tempName.trim()) {
@@ -186,16 +226,80 @@ export function SidebarDrawer({
               </div>
             </div>
 
-            {/* Dark Teal "Backup Now" Pill Button */}
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={handleBackupNow}
-                className="w-full py-2.5 px-4 bg-[#2C5E6E] hover:bg-[#234C59] active:scale-[0.98] text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
-              >
-                <Download className="w-4 h-4" />
-                <span>Backup Now</span>
-              </button>
+            {/* Cloud Sync Section */}
+            <div className="mt-4 p-3.5 bg-white rounded-2xl border border-gray-100 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-[#E0F4F1] flex items-center justify-center text-[#2C5E6E]">
+                    <Cloud className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-[#2D3748] block">Cloud Sync</span>
+                    <span className="text-[10px] text-gray-400">Auto 2-hr &amp; focus pull</span>
+                  </div>
+                </div>
+
+                {/* Status Badges */}
+                {isSyncing || syncStatus === 'syncing' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs">
+                    <RefreshCw className="w-3 h-3 animate-spin text-sky-600 shrink-0" />
+                    <span>Syncing...</span>
+                  </span>
+                ) : syncStatus === 'offline' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                    <WifiOff className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span>Offline (Local Storage)</span>
+                  </span>
+                ) : syncStatus === 'error' ? (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200 shadow-2xs max-w-[130px] truncate"
+                    title={syncError || 'Sync failed'}
+                  >
+                    <AlertCircle className="w-3 h-3 text-red-500 shrink-0" />
+                    <span className="truncate">{syncError || 'Error'}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span>Cloud Synced ({getRelativeTimeString(lastSyncedAt)})</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Action Buttons: Sync Now & Backup Now */}
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  className="py-2 px-3 bg-[#2C5E6E] hover:bg-[#234C59] active:scale-[0.98] disabled:opacity-60 text-white rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{syncStatus === 'error' ? 'Retry Sync' : isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBackupNow}
+                  className="py-2 px-3 bg-gray-100 hover:bg-gray-200 active:scale-[0.98] text-[#2D3748] rounded-xl font-semibold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Backup JSON</span>
+                </button>
+              </div>
+
+              {/* Sync Toast Feedback */}
+              {syncToast && (
+                <div
+                  className={`text-[11px] font-medium text-center p-1.5 rounded-lg transition-all animate-in fade-in duration-150 ${
+                    syncToast.type === 'error'
+                      ? 'bg-red-50 text-red-700 border border-red-100'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                  }`}
+                >
+                  {syncToast.message}
+                </div>
+              )}
             </div>
           </div>
 
@@ -319,7 +423,7 @@ export function SidebarDrawer({
                 <div>
                   <span className="font-semibold text-sm text-[#2D3748] block">Security & Master PIN</span>
                   <span className="text-[11px] text-gray-400">
-                    {hasCustomMasterPin ? 'Custom PIN active' : 'Default PIN (1234)'}
+                    {hasCustomMasterPin ? 'Custom PIN active' : 'Master PIN configured'}
                   </span>
                 </div>
               </div>

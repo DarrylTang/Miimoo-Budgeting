@@ -211,7 +211,7 @@ export function PinAuthModal({ isOpen }: PinAuthModalProps) {
             <span>Encrypted Perpetual Device Session</span>
           </div>
           <span className="text-[9px] text-gray-400/80">
-            Default PIN: <strong className="text-gray-500 font-mono">1234</strong> (or customize in Settings)
+            Master Passcode is configured in Vercel&apos;s admin dashboard.
           </span>
         </div>
       </div>

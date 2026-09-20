@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, createContext, useContext, useRef } from 'react';
 import { Transaction, Account, RecurringRule, CategoryItem, CreditCard, CardColorTheme } from '@/types';
+import { getConvexClient } from '@/lib/convexClient';
+import { api } from '../../convex/_generated/api';
 
 export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: 'cat-food', name: 'Food', icon: 'UtensilsCrossed', color: '#F46C6C', bgColor: '#FFF0F0', type: 'expense' },
@@ -158,6 +160,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [];
 
 export const AUTH_TOKEN_KEY = 'miimoo_auth_session_v1';
 export const CUSTOM_PIN_KEY = 'miimoo_master_pin_v1';
+export const LAST_SYNCED_KEY = 'miimoo_last_synced_at';
 
 const STORAGE_KEY = 'miimoo_budget_data_v1';
 
@@ -207,6 +210,13 @@ interface BudgetContextType extends BudgetState {
   exportCSV: () => void;
   importJSON: (jsonData: string) => boolean;
   resetToSampleData: () => void;
+
+  // Cloud Sync state & triggers
+  isSyncing: boolean;
+  lastSyncedAt: number | null;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'offline' | 'error';
+  syncError: string | null;
+  syncNow: () => Promise<{ success: boolean; message: string }>;
 }
 
 const BudgetContext = createContext<BudgetContextType | null>(null);
@@ -225,6 +235,58 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const [recurring, setRecurring] = useState<RecurringRule[]>(DEFAULT_RECURRING);
   const [quickTags, setQuickTags] = useState<string[]>(DEFAULT_QUICK_TAGS);
 
+  // Cloud Sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'offline' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+
+  // Ref tracking current state for async sync calls avoiding stale closure
+  const stateRef = useRef<BudgetState>({
+    transactions,
+    accounts,
+    cards,
+    categories,
+    recurring,
+    quickTags,
+    isBalanceHidden,
+    selectedAccountId,
+    userName,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      transactions,
+      accounts,
+      cards,
+      categories,
+      recurring,
+      quickTags,
+      isBalanceHidden,
+      selectedAccountId,
+      userName,
+    };
+  }, [transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName]);
+
+  // Online / Offline listener
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSyncStatus('offline');
+    }
+    const handleOnline = () => {
+      setSyncStatus((prev) => (prev === 'offline' ? 'idle' : prev));
+    };
+    const handleOffline = () => {
+      setSyncStatus('offline');
+    };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Check persistent auth session on mount
   useEffect(() => {
     try {
@@ -235,6 +297,13 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       const customPin = localStorage.getItem(CUSTOM_PIN_KEY);
       if (customPin) {
         setHasCustomMasterPin(true);
+      }
+      const storedLastSync = localStorage.getItem(LAST_SYNCED_KEY);
+      if (storedLastSync) {
+        const parsed = parseInt(storedLastSync, 10);
+        if (!isNaN(parsed)) {
+          setLastSyncedAt(parsed);
+        }
       }
     } catch (e) {
       console.error('Error checking auth session:', e);
@@ -294,7 +363,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       const custom = localStorage.getItem(CUSTOM_PIN_KEY);
       if (custom && custom.trim()) return custom.trim();
     } catch (e) {}
-    return (process.env.NEXT_PUBLIC_MASTER_PIN || '1234').trim();
+    return (process.env.NEXT_PUBLIC_MASTER_PIN || '').trim();
   }, []);
 
   const unlockApp = useCallback((pin: string) => {
@@ -601,6 +670,242 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const applyMergedData = useCallback((data: any) => {
+    if (!data || typeof data !== 'object') return;
+    if (Array.isArray(data.transactions)) setTransactions(data.transactions);
+    if (Array.isArray(data.accounts)) setAccounts(data.accounts);
+    if (Array.isArray(data.cards)) setCards(data.cards);
+    if (Array.isArray(data.categories)) setCategories(data.categories);
+    if (Array.isArray(data.recurring)) setRecurring(data.recurring);
+    if (Array.isArray(data.quickTags)) setQuickTags(data.quickTags);
+    if (typeof data.userName === 'string' && data.userName) setUserName(data.userName);
+    if (typeof data.isBalanceHidden === 'boolean') setIsBalanceHidden(data.isBalanceHidden);
+    if (typeof data.selectedAccountId === 'string' && data.selectedAccountId) setSelectedAccountId(data.selectedAccountId);
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.error('Failed to write mergedData to localStorage:', e);
+    }
+  }, []);
+
+  const mergeSnapshotsLocally = useCallback((local: BudgetState, cloud: any): BudgetState => {
+    // 1. Transactions: union by id, prefer newer timestamp, sort desc by date
+    const txMap = new Map<string, Transaction>();
+    if (Array.isArray(cloud.transactions)) {
+      for (const tx of cloud.transactions) {
+        if (tx && tx.id) txMap.set(tx.id, tx);
+      }
+    }
+    if (Array.isArray(local.transactions)) {
+      for (const tx of local.transactions) {
+        if (!tx || !tx.id) continue;
+        const serverTx = txMap.get(tx.id);
+        if (!serverTx) {
+          txMap.set(tx.id, tx);
+        } else {
+          const localTime = (tx as any).updatedAt || (tx as any).lastModified || tx.createdAt || 0;
+          const serverTime = (serverTx as any).updatedAt || (serverTx as any).lastModified || serverTx.createdAt || 0;
+          if (localTime >= serverTime) {
+            txMap.set(tx.id, { ...serverTx, ...tx });
+          } else {
+            txMap.set(tx.id, { ...tx, ...serverTx });
+          }
+        }
+      }
+    }
+    const mergedTransactions = Array.from(txMap.values()).sort((a, b) => {
+      const dateA = new Date(a.date).getTime() || 0;
+      const dateB = new Date(b.date).getTime() || 0;
+      if (dateB !== dateA) return dateB - dateA;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    const mergeById = <T extends { id: string }>(serverList: any[] = [], clientList: any[] = []): T[] => {
+      const map = new Map<string, any>();
+      if (Array.isArray(serverList)) {
+        for (const item of serverList) {
+          if (item && item.id) map.set(item.id, item);
+        }
+      }
+      if (Array.isArray(clientList)) {
+        for (const item of clientList) {
+          if (item && item.id) {
+            const existing = map.get(item.id);
+            map.set(item.id, existing ? { ...existing, ...item } : item);
+          }
+        }
+      }
+      return Array.from(map.values());
+    };
+
+    const mergedAccounts = mergeById<Account>(cloud.accounts, local.accounts);
+    const mergedCards = mergeById<CreditCard>(cloud.cards, local.cards);
+    const mergedCategories = mergeById<CategoryItem>(cloud.categories, local.categories);
+    const mergedRecurring = mergeById<RecurringRule>(cloud.recurring, local.recurring);
+
+    const serverTags = Array.isArray(cloud.quickTags) ? cloud.quickTags : [];
+    const clientTags = Array.isArray(local.quickTags) ? local.quickTags : [];
+    const mergedQuickTags = Array.from(
+      new Set(
+        [...serverTags, ...clientTags]
+          .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+          .map((t) => t.trim())
+      )
+    );
+
+    return {
+      transactions: mergedTransactions.length > 0 ? mergedTransactions : local.transactions,
+      accounts: mergedAccounts.length > 0 ? mergedAccounts : local.accounts,
+      cards: mergedCards.length > 0 ? mergedCards : local.cards,
+      categories: mergedCategories.length > 0 ? mergedCategories : local.categories,
+      recurring: mergedRecurring.length > 0 ? mergedRecurring : local.recurring,
+      quickTags: mergedQuickTags.length > 0 ? mergedQuickTags : local.quickTags,
+      userName: local.userName || cloud.userName || 'Darryl',
+      isBalanceHidden: typeof local.isBalanceHidden === 'boolean' ? local.isBalanceHidden : (cloud.isBalanceHidden ?? false),
+      selectedAccountId: local.selectedAccountId || cloud.selectedAccountId || 'acc-main',
+    };
+  }, []);
+
+  const isSyncingRef = useRef(false);
+
+  const syncWithCloud = useCallback(async (direction: 'push' | 'pull' | 'both' = 'both'): Promise<{ success: boolean; message: string }> => {
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    const client = getConvexClient();
+
+    if (isOffline || !client) {
+      setSyncStatus('offline');
+      setIsSyncing(false);
+      isSyncingRef.current = false;
+      return { success: false, message: isOffline ? 'Offline: Operating in local storage mode' : 'Convex client not configured' };
+    }
+
+    const pin = getMasterPin();
+    if (!pin) {
+      setSyncStatus('error');
+      const err = 'Master PIN not configured. Configure NEXT_PUBLIC_MASTER_PIN in Vercel dashboard or customize in Settings.';
+      setSyncError(err);
+      setIsSyncing(false);
+      isSyncingRef.current = false;
+      return { success: false, message: err };
+    }
+
+    if (isSyncingRef.current) {
+      return { success: true, message: 'Sync already in progress' };
+    }
+
+    isSyncingRef.current = true;
+    setIsSyncing(true);
+    setSyncStatus('syncing');
+    setSyncError(null);
+
+    try {
+      if (direction === 'pull') {
+        const res = await client.query(api.sync.pull, { pin });
+        if (res && res.found && res.data) {
+          const cloudParsed = JSON.parse(res.data);
+          const currentSnapshot = stateRef.current;
+          const merged = mergeSnapshotsLocally(currentSnapshot, cloudParsed);
+          applyMergedData(merged);
+          const syncTime = res.lastSyncedAt || Date.now();
+          setLastSyncedAt(syncTime);
+          try {
+            localStorage.setItem(LAST_SYNCED_KEY, syncTime.toString());
+          } catch (e) {}
+        }
+        setSyncStatus('synced');
+        return { success: true, message: 'Cloud updates pulled successfully' };
+      }
+
+      // direction === 'push' or 'both'
+      const clientSnapshot = stateRef.current;
+      const res = await client.mutation(api.sync.push, {
+        pin,
+        clientData: JSON.stringify(clientSnapshot),
+        clientTimestamp: Date.now(),
+      });
+
+      if (res && res.mergedData) {
+        const merged = JSON.parse(res.mergedData);
+        applyMergedData(merged);
+        const syncTime = res.serverTime || Date.now();
+        setLastSyncedAt(syncTime);
+        try {
+          localStorage.setItem(LAST_SYNCED_KEY, syncTime.toString());
+        } catch (e) {}
+      }
+
+      setSyncStatus('synced');
+      return { success: true, message: 'Synced with cloud successfully' };
+    } catch (err: any) {
+      console.error('Cloud sync error:', err);
+      const msg = err?.message || 'Failed to sync with cloud';
+      setSyncStatus('error');
+      setSyncError(msg);
+      return { success: false, message: msg };
+    } finally {
+      setIsSyncing(false);
+      isSyncingRef.current = false;
+    }
+  }, [getMasterPin, mergeSnapshotsLocally, applyMergedData]);
+
+  const syncNow = useCallback(async () => {
+    return syncWithCloud('both');
+  }, [syncWithCloud]);
+
+  const lastPullTimeRef = useRef(0);
+
+  // Smart pull on mount (when unlocked) and on window focus / visibility change
+  useEffect(() => {
+    if (!isLoaded || !isUnlocked) return;
+
+    const triggerSmartPull = () => {
+      const now = Date.now();
+      if (now - lastPullTimeRef.current < 15000) return; // 15s throttle
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      lastPullTimeRef.current = now;
+      syncWithCloud('pull');
+    };
+
+    triggerSmartPull();
+
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        triggerSmartPull();
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        triggerSmartPull();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isLoaded, isUnlocked, syncWithCloud]);
+
+  // 2-hour periodic auto push when online
+  useEffect(() => {
+    if (!isLoaded || !isUnlocked) return;
+
+    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+    const interval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      const lastSync = lastSyncedAt || 0;
+      if (Date.now() - lastSync >= TWO_HOURS_MS) {
+        syncWithCloud('push');
+      }
+    }, 60 * 1000); // check every minute
+
+    return () => clearInterval(interval);
+  }, [isLoaded, isUnlocked, lastSyncedAt, syncWithCloud]);
+
   const resetToSampleData = loadDemoData;
 
   const value: BudgetContextType = {
@@ -646,6 +951,11 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     exportCSV,
     importJSON,
     resetToSampleData,
+    isSyncing,
+    lastSyncedAt,
+    syncStatus,
+    syncError,
+    syncNow,
   };
 
   return <BudgetContext.Provider value={value}>{children}</BudgetContext.Provider>;
