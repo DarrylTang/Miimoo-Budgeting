@@ -182,11 +182,16 @@ export const push = mutation({
       existingData = {};
     }
 
-    // 1. Transactions: union by id, prefer newer timestamp/edits, sort desc by date
+    // Merge deletedIds from existing server state and client state
+    const serverDeleted: string[] = Array.isArray(existingData.deletedIds) ? existingData.deletedIds : [];
+    const clientDeleted: string[] = Array.isArray(parsedClient.deletedIds) ? parsedClient.deletedIds : [];
+    const allDeletedIds = new Set<string>([...serverDeleted, ...clientDeleted]);
+
+    // 1. Transactions: union by id, prefer newer timestamp/edits, sort desc by date, purge deleted
     const txMap = new Map<string, any>();
     if (Array.isArray(existingData.transactions)) {
       for (const tx of existingData.transactions) {
-        if (tx && typeof tx === "object" && tx.id) {
+        if (tx && typeof tx === "object" && tx.id && !allDeletedIds.has(tx.id)) {
           txMap.set(tx.id, tx);
         }
       }
@@ -194,7 +199,7 @@ export const push = mutation({
 
     if (Array.isArray(parsedClient.transactions)) {
       for (const clientTx of parsedClient.transactions) {
-        if (!clientTx || typeof clientTx !== "object" || !clientTx.id) continue;
+        if (!clientTx || typeof clientTx !== "object" || !clientTx.id || allDeletedIds.has(clientTx.id)) continue;
         const serverTx = txMap.get(clientTx.id);
         if (!serverTx) {
           txMap.set(clientTx.id, clientTx);
@@ -210,7 +215,7 @@ export const push = mutation({
       }
     }
 
-    const mergedTransactions = Array.from(txMap.values());
+    const mergedTransactions = Array.from(txMap.values()).filter((tx) => !allDeletedIds.has(tx.id));
     mergedTransactions.sort((a, b) => {
       const dateA = parseDateToMillis(a.date);
       const dateB = parseDateToMillis(b.date);
@@ -225,17 +230,52 @@ export const push = mutation({
       return createdB - createdA;
     });
 
-    // 2. Accounts: union by id, preserving updated fields
-    const mergedAccounts = mergeById(existingData.accounts, parsedClient.accounts);
+    // 2. Accounts: union by id, purge deleted
+    const mergedAccounts = mergeById(existingData.accounts, parsedClient.accounts).filter(
+      (a: any) => !!a?.id && !allDeletedIds.has(a.id)
+    );
 
-    // 3. Cards: union by id
-    const mergedCards = mergeById(existingData.cards, parsedClient.cards);
+    // 3. Cards: if client provided cards list, client's cards are authoritative, and any deleted card is purged
+    let mergedCards: any[] = [];
+    if (Array.isArray(parsedClient.cards)) {
+      const cardMap = new Map<string, any>();
+      if (Array.isArray(existingData.cards)) {
+        for (const c of existingData.cards) {
+          if (c && c.id && !allDeletedIds.has(c.id)) cardMap.set(c.id, c);
+        }
+      }
+      for (const c of parsedClient.cards) {
+        if (c && c.id && !allDeletedIds.has(c.id)) cardMap.set(c.id, c);
+      }
+      // When client actively syncs with an explicit card list, any card omitted by client is purged
+      const clientCardIds = new Set(parsedClient.cards.map((c: any) => c.id));
+      mergedCards = Array.from(cardMap.values()).filter((c) => clientCardIds.has(c.id) && !allDeletedIds.has(c.id));
+    } else {
+      mergedCards = (existingData.cards || []).filter((c: any) => !allDeletedIds.has(c.id));
+    }
 
-    // 4. Categories: union by id
-    const mergedCategories = mergeById(existingData.categories, parsedClient.categories);
+    // 4. Categories: union by id, purge deleted
+    const mergedCategories = mergeById(existingData.categories, parsedClient.categories).filter(
+      (c: any) => !!c?.id && !allDeletedIds.has(c.id)
+    );
 
-    // 5. Recurring: union by id
-    const mergedRecurring = mergeById(existingData.recurring, parsedClient.recurring);
+    // 5. Recurring: if client provided recurring rules list, client's list is authoritative and deleted rules are purged
+    let mergedRecurring: any[] = [];
+    if (Array.isArray(parsedClient.recurring)) {
+      const recMap = new Map<string, any>();
+      if (Array.isArray(existingData.recurring)) {
+        for (const r of existingData.recurring) {
+          if (r && r.id && !allDeletedIds.has(r.id)) recMap.set(r.id, r);
+        }
+      }
+      for (const r of parsedClient.recurring) {
+        if (r && r.id && !allDeletedIds.has(r.id)) recMap.set(r.id, r);
+      }
+      const clientRecIds = new Set(parsedClient.recurring.map((r: any) => r.id));
+      mergedRecurring = Array.from(recMap.values()).filter((r) => clientRecIds.has(r.id) && !allDeletedIds.has(r.id));
+    } else {
+      mergedRecurring = (existingData.recurring || []).filter((r: any) => !allDeletedIds.has(r.id));
+    }
 
     // 6. QuickTags: deduplicated union array
     const serverTags = Array.isArray(existingData.quickTags) ? existingData.quickTags : [];
@@ -272,6 +312,7 @@ export const push = mutation({
       userName,
       isBalanceHidden,
       selectedAccountId,
+      deletedIds: Array.from(allDeletedIds),
       lastSyncedAt: now,
     };
 
