@@ -40,6 +40,14 @@ function evaluateExpression(expr: string): number | null {
   }
 }
 
+function getTodayDateStr(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function NewEntryModal({
   isOpen,
   onClose,
@@ -59,12 +67,12 @@ export function NewEntryModal({
 
   // Form states
   const [type, setType] = useState<TransactionType>('expense');
-  const [amountStr, setAmountStr] = useState('0');
+  const [amountStr, setAmountStr] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Food');
   const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id || 'acc-main');
   const [selectedCardId, setSelectedCardId] = useState<string>('');
   const [toAccountId, setToAccountId] = useState(accounts[1]?.id || 'acc-overseas');
-  const [dateStr, setDateStr] = useState('2026-09-19');
+  const [dateStr, setDateStr] = useState(getTodayDateStr);
   const [memo, setMemo] = useState('');
 
   // Calculator state
@@ -115,7 +123,7 @@ export function NewEntryModal({
       setCalcPreview(null);
     } else {
       setType('expense');
-      setAmountStr('0');
+      setAmountStr('');
       setSelectedCategory('Food');
 
       // Default to currently selected account in dashboard/accounts view
@@ -131,7 +139,7 @@ export function NewEntryModal({
       const defaultCard = cards.find(c => c.isDefault) || cards[0];
       setSelectedCardId(defaultCard ? defaultCard.id : '');
 
-      setDateStr('2026-09-19'); // Default to Sep 19, 2026 matching screenshots
+      setDateStr(getTodayDateStr());
       setMemo('');
       setIsCalculatorOpen(false);
       setCalcExpression('');
@@ -148,17 +156,13 @@ export function NewEntryModal({
   // Handle amount keypad typing
   const handleKeypadPress = (val: string) => {
     if (val === 'backspace') {
-      if (amountStr.length <= 1) {
-        setAmountStr('0');
-      } else {
-        setAmountStr(amountStr.slice(0, -1));
-      }
+      setAmountStr((prev) => prev.slice(0, -1));
       return;
     }
 
     if (val === '.') {
       if (!amountStr.includes('.')) {
-        setAmountStr(amountStr + '.');
+        setAmountStr(amountStr === '' ? '0.' : amountStr + '.');
       }
       return;
     }
@@ -216,10 +220,7 @@ export function NewEntryModal({
   };
 
   const handleSetToday = () => {
-    // Return formatted today date: 2026-09-19
-    const d = new Date();
-    // Default to current simulated app date: 2026-09-19
-    setDateStr('2026-09-19');
+    setDateStr(getTodayDateStr());
   };
 
   const handleSave = (keepOpen = false) => {
@@ -255,7 +256,7 @@ export function NewEntryModal({
 
     if (keepOpen) {
       // Reset amount and memo for rapid entry, keeping category, account, card, date, and type intact
-      setAmountStr('0');
+      setAmountStr('');
       setMemo('');
       setIsCalculatorOpen(false);
       setCalcExpression('');
@@ -369,11 +370,19 @@ export function NewEntryModal({
                 type="text"
                 inputMode="decimal"
                 value={amountStr}
+                placeholder="0"
                 onChange={(e) => {
-                  const val = e.target.value.replace(/[^0-9.]/g, '');
-                  setAmountStr(val || '0');
+                  let val = e.target.value.replace(/[^0-9.]/g, '');
+                  const parts = val.split('.');
+                  if (parts.length > 2) {
+                    val = parts[0] + '.' + parts.slice(1).join('');
+                  }
+                  if (parts[1] && parts[1].length > 2) {
+                    val = parts[0] + '.' + parts[1].slice(0, 2);
+                  }
+                  setAmountStr(val);
                 }}
-                className={`text-4xl sm:text-5xl font-extrabold tracking-tight text-center bg-transparent border-none outline-hidden max-w-[260px] ${
+                className={`text-4xl sm:text-5xl font-extrabold tracking-tight text-center bg-transparent border-none outline-hidden max-w-[260px] placeholder:text-gray-300 ${
                   type === 'expense'
                     ? 'text-[#F46C6C]'
                     : type === 'income'
