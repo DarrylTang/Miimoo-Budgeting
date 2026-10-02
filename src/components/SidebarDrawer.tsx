@@ -189,7 +189,6 @@ export function SidebarDrawer({
                   </div>
                   <div>
                     <span className="text-xs font-bold text-[#2D3748] block">Cloud Sync</span>
-                    <span className="text-[10px] text-gray-400">Auto 2-hr &amp; focus pull</span>
                   </div>
                 </div>
 
