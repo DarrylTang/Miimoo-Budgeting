@@ -5,6 +5,67 @@ import { Transaction, Account, RecurringRule, CategoryItem, CreditCard, CardColo
 import { getConvexClient } from '@/lib/convexClient';
 import { api } from '../../convex/_generated/api';
 
+/**
+ * Returns current date formatted as YYYY-MM-DD in user's local timezone.
+ */
+export function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Accurately advances a date string (YYYY-MM-DD) across recurrence intervals,
+ * preserving specific days of month (e.g. 31st or 1st) across variable-length months without drifting.
+ */
+export function advanceNextDateString(
+  dateStr: string,
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly',
+  dayOfMonth?: number
+): string {
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10); // 1-12
+  const day = parseInt(parts[2], 10);
+
+  if (frequency === 'daily') {
+    const d = new Date(year, month - 1, day);
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  if (frequency === 'weekly') {
+    const d = new Date(year, month - 1, day);
+    d.setDate(d.getDate() + 7);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  if (frequency === 'monthly') {
+    const targetDay = dayOfMonth ?? day;
+    let nextYear = year;
+    let nextMonth = month + 1;
+    if (nextMonth > 12) {
+      nextMonth = 1;
+      nextYear += 1;
+    }
+    const maxDays = new Date(nextYear, nextMonth, 0).getDate();
+    const actualDay = Math.min(targetDay, maxDays);
+    return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(actualDay).padStart(2, '0')}`;
+  }
+
+  if (frequency === 'yearly') {
+    const targetDay = dayOfMonth ?? day;
+    const nextYear = year + 1;
+    const maxDays = new Date(nextYear, month, 0).getDate();
+    const actualDay = Math.min(targetDay, maxDays);
+    return `${nextYear}-${String(month).padStart(2, '0')}-${String(actualDay).padStart(2, '0')}`;
+  }
+
+  return dateStr;
+}
+
 export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: 'cat-food', name: 'Food', icon: 'UtensilsCrossed', color: '#F46C6C', bgColor: '#FFF0F0', type: 'expense' },
   { id: 'cat-entertainment', name: 'Entertainment', icon: 'Sparkles', color: '#8B5CF6', bgColor: '#F5F3FF', type: 'expense' },
@@ -201,6 +262,7 @@ interface BudgetContextType extends BudgetState {
   updateRecurringRule: (id: string, rule: Partial<RecurringRule>) => void;
   toggleRecurringRule: (id: string) => void;
   deleteRecurringRule: (id: string) => void;
+  processDueRecurringRules: (currentDateOverride?: string, rulesOverride?: RecurringRule[]) => { appliedCount: number; appliedTitles: string[] };
   addCategory: (cat: Omit<CategoryItem, 'id'>) => void;
   updateCategory: (id: string, cat: Partial<CategoryItem>) => void;
   deleteCategory: (id: string) => void;
@@ -258,20 +320,18 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     deletedIds,
   });
 
-  useEffect(() => {
-    stateRef.current = {
-      transactions,
-      accounts,
-      cards,
-      categories,
-      recurring,
-      quickTags,
-      isBalanceHidden,
-      selectedAccountId,
-      userName,
-      deletedIds,
-    };
-  }, [transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName, deletedIds]);
+  stateRef.current = {
+    transactions,
+    accounts,
+    cards,
+    categories,
+    recurring,
+    quickTags,
+    isBalanceHidden,
+    selectedAccountId,
+    userName,
+    deletedIds,
+  };
 
   // Online / Offline listener
   useEffect(() => {
@@ -382,6 +442,145 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       console.error('Error saving budget data to localStorage:', e);
     }
   }, [isLoaded, transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName, deletedIds]);
+
+  const processDueRecurringRules = useCallback((currentDateOverride?: string, rulesOverride?: RecurringRule[]): { appliedCount: number; appliedTitles: string[] } => {
+    const todayStr = currentDateOverride || getLocalDateString();
+    let appliedCount = 0;
+    const appliedTitles: string[] = [];
+
+    const currentRecurring = rulesOverride || stateRef.current.recurring;
+    const currentTransactions = stateRef.current.transactions;
+
+    if (!Array.isArray(currentRecurring) || currentRecurring.length === 0) {
+      return { appliedCount: 0, appliedTitles: [] };
+    }
+
+    const newTransactions: Transaction[] = [];
+    const accountDeltas: Record<string, number> = {};
+    let anyRuleUpdated = false;
+
+    const updatedRecurring = currentRecurring.map((rule) => {
+      if (!rule.isActive) return rule;
+
+      const ruleNextDate = rule.nextDate || rule.startDate;
+      if (!ruleNextDate || ruleNextDate > todayStr) return rule;
+
+      let curDate = ruleNextDate;
+      let loopCount = 0;
+      let ruleAdvanced = false;
+
+      while (curDate <= todayStr && loopCount < 365) {
+        loopCount++;
+        const txDate = curDate;
+
+        // Prevent duplicate transaction: check existing transactions and newTransactions
+        const alreadyExists =
+          currentTransactions.some(
+            (t) =>
+              ((t as any).recurringRuleId === rule.id && t.date === txDate) ||
+              (t.memo === rule.title &&
+                Math.abs(t.amount - rule.amount) < 0.001 &&
+                t.type === rule.type &&
+                t.accountId === rule.accountId &&
+                t.date === txDate)
+          ) ||
+          newTransactions.some(
+            (t) =>
+              ((t as any).recurringRuleId === rule.id && t.date === txDate) ||
+              (t.memo === rule.title &&
+                Math.abs(t.amount - rule.amount) < 0.001 &&
+                t.type === rule.type &&
+                t.accountId === rule.accountId &&
+                t.date === txDate)
+          );
+
+        if (!alreadyExists) {
+          const newTx: Transaction = {
+            id: `tx-rec-${rule.id}-${txDate}`,
+            type: rule.type,
+            amount: rule.amount,
+            category: rule.category,
+            accountId: rule.accountId,
+            date: txDate,
+            memo: rule.title,
+            createdAt: Date.now(),
+          };
+          (newTx as any).recurringRuleId = rule.id;
+          newTransactions.push(newTx);
+
+          const diff = rule.type === 'income' ? rule.amount : -rule.amount;
+          accountDeltas[rule.accountId] = (accountDeltas[rule.accountId] || 0) + diff;
+
+          appliedCount++;
+          if (!appliedTitles.includes(rule.title)) {
+            appliedTitles.push(rule.title);
+          }
+        }
+
+        curDate = advanceNextDateString(curDate, rule.frequency, rule.dayOfMonth);
+        ruleAdvanced = true;
+      }
+
+      if (ruleAdvanced && curDate !== rule.nextDate) {
+        anyRuleUpdated = true;
+        return { ...rule, nextDate: curDate };
+      }
+
+      return rule;
+    });
+
+    if (newTransactions.length > 0 || anyRuleUpdated) {
+      if (anyRuleUpdated) {
+        setRecurring(updatedRecurring);
+      }
+
+      if (newTransactions.length > 0) {
+        setTransactions((prev) => [...newTransactions, ...prev]);
+      }
+
+      if (Object.keys(accountDeltas).length > 0) {
+        setAccounts((prevAccs) =>
+          prevAccs.map((acc) => {
+            if (accountDeltas[acc.id] !== undefined) {
+              return {
+                ...acc,
+                balance: Math.round((acc.balance + accountDeltas[acc.id]) * 100) / 100,
+              };
+            }
+            return acc;
+          })
+        );
+      }
+    }
+
+    return { appliedCount, appliedTitles };
+  }, []);
+
+  // Automatically check and process any due recurring rules on initial load, periodically, and when tab regains focus
+  useEffect(() => {
+    if (!isLoaded) return;
+    processDueRecurringRules();
+
+    const interval = setInterval(() => {
+      processDueRecurringRules();
+    }, 60 * 1000);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        processDueRecurringRules();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+    };
+  }, [isLoaded, processDueRecurringRules]);
 
   const recordDeletedId = useCallback((id: string) => {
     setDeletedIds((prev) => {
@@ -588,16 +787,29 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
 
   const addRecurringRule = useCallback((rule: Omit<RecurringRule, 'id'>) => {
     const id = 'rec-' + Date.now();
-    setRecurring(prev => [...prev, { ...rule, id }]);
-  }, []);
+    const newRule: RecurringRule = { ...rule, id };
+    setRecurring(prev => {
+      const nextList = [...prev, newRule];
+      setTimeout(() => processDueRecurringRules(undefined, nextList), 10);
+      return nextList;
+    });
+  }, [processDueRecurringRules]);
 
   const updateRecurringRule = useCallback((id: string, updates: Partial<RecurringRule>) => {
-    setRecurring(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-  }, []);
+    setRecurring(prev => {
+      const nextList = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+      setTimeout(() => processDueRecurringRules(undefined, nextList), 10);
+      return nextList;
+    });
+  }, [processDueRecurringRules]);
 
   const toggleRecurringRule = useCallback((id: string) => {
-    setRecurring(prev => prev.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r));
-  }, []);
+    setRecurring(prev => {
+      const nextList = prev.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r);
+      setTimeout(() => processDueRecurringRules(undefined, nextList), 10);
+      return nextList;
+    });
+  }, [processDueRecurringRules]);
 
   const deleteRecurringRule = useCallback((id: string) => {
     recordDeletedId(id);
@@ -762,7 +974,11 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     if (Array.isArray(data.accounts)) setAccounts(data.accounts.filter((a: any) => !delSet.has(a.id)));
     if (Array.isArray(data.cards)) setCards(data.cards.filter((c: any) => !delSet.has(c.id)));
     if (Array.isArray(data.categories)) setCategories(data.categories.filter((c: any) => !delSet.has(c.id)));
-    if (Array.isArray(data.recurring)) setRecurring(data.recurring.filter((r: any) => !delSet.has(r.id)));
+    if (Array.isArray(data.recurring)) {
+      const activeRec = data.recurring.filter((r: any) => !delSet.has(r.id));
+      setRecurring(activeRec);
+      setTimeout(() => processDueRecurringRules(undefined, activeRec), 50);
+    }
     if (Array.isArray(data.quickTags)) setQuickTags(data.quickTags);
     if (typeof data.userName === 'string' && data.userName) setUserName(data.userName);
     if (typeof data.isBalanceHidden === 'boolean') setIsBalanceHidden(data.isBalanceHidden);
@@ -773,7 +989,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error('Failed to write mergedData to localStorage:', e);
     }
-  }, [deletedIds]);
+  }, [deletedIds, processDueRecurringRules]);
 
   const mergeSnapshotsLocally = useCallback((local: BudgetState, cloud: any): BudgetState => {
     const cloudDeleted: string[] = Array.isArray(cloud.deletedIds) ? cloud.deletedIds : [];
@@ -1051,6 +1267,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     updateRecurringRule,
     toggleRecurringRule,
     deleteRecurringRule,
+    processDueRecurringRules,
     addCategory,
     updateCategory,
     deleteCategory,

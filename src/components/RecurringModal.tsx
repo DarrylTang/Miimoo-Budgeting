@@ -13,7 +13,7 @@ import {
   Info,
   Check,
 } from 'lucide-react';
-import { useBudget } from '@/lib/store';
+import { useBudget, getLocalDateString } from '@/lib/store';
 import { RecurringRule } from '@/types';
 
 interface RecurringModalProps {
@@ -32,11 +32,13 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
     updateRecurringRule,
     toggleRecurringRule,
     deleteRecurringRule,
+    processDueRecurringRules,
   } = useBudget();
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<RecurringRule | null>(null);
   const [ruleToDelete, setRuleToDelete] = useState<RecurringRule | null>(null);
+  const [appliedNotice, setAppliedNotice] = useState<string | null>(null);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -45,13 +47,42 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
   const [category, setCategory] = useState('Housing');
   const [accountId, setAccountId] = useState(accounts[0]?.id || 'acc-main');
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [nextDate, setNextDate] = useState('2026-10-01');
+  const [nextDate, setNextDate] = useState(() => getLocalDateString());
   const [dayOfMonth, setDayOfMonth] = useState<number>(1);
   const [weekday, setWeekday] = useState<string>('Mon');
+
+  const handleDayOfMonthChange = (d: number) => {
+    setDayOfMonth(d);
+    if (nextDate) {
+      const parts = nextDate.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const maxDays = new Date(year, month, 0).getDate();
+        const clamped = Math.min(d, maxDays);
+        setNextDate(`${parts[0]}-${parts[1]}-${String(clamped).padStart(2, '0')}`);
+      }
+    }
+  };
+
+  // Auto-check and process due recurring rules whenever modal is opened
+  React.useEffect(() => {
+    if (isOpen) {
+      const res = processDueRecurringRules();
+      if (res && res.appliedCount > 0) {
+        setAppliedNotice(
+          `Automatically processed ${res.appliedCount} due rule${res.appliedCount > 1 ? 's' : ''}: ${res.appliedTitles.join(', ')}`
+        );
+        setTimeout(() => setAppliedNotice(null), 5000);
+      }
+    }
+  }, [isOpen, processDueRecurringRules]);
 
   if (!isOpen) return null;
 
   const handleStartAdd = () => {
+    const todayStr = getLocalDateString();
+    const todayDay = new Date().getDate();
     setEditingRule(null);
     setTitle('');
     setAmount('');
@@ -59,8 +90,8 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
     setCategory('Housing');
     setAccountId(accounts[0]?.id || 'acc-main');
     setFrequency('monthly');
-    setNextDate('2026-10-01');
-    setDayOfMonth(1);
+    setNextDate(todayStr);
+    setDayOfMonth(todayDay);
     setWeekday('Mon');
     setIsFormOpen(true);
   };
@@ -73,8 +104,8 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
     setCategory(rule.category);
     setAccountId(rule.accountId);
     setFrequency((rule.frequency as any) || 'monthly');
-    setNextDate(rule.nextDate || '2026-10-01');
-    setDayOfMonth(rule.dayOfMonth || 1);
+    setNextDate(rule.nextDate || getLocalDateString());
+    setDayOfMonth(rule.dayOfMonth || (rule.nextDate ? parseInt(rule.nextDate.split('-')[2], 10) : new Date().getDate()));
     setWeekday(rule.weekday || 'Mon');
     setIsFormOpen(true);
   };
@@ -153,15 +184,45 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
         <div className="p-5 overflow-y-auto space-y-4 no-scrollbar">
           {!isFormOpen ? (
             <>
-              {/* Add Rule Button */}
-              <button
-                type="button"
-                onClick={handleStartAdd}
-                className="w-full py-2.5 px-4 bg-[#FFF0F0] hover:bg-[#ffe4e4] text-[#F46C6C] rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Recurring Rule</span>
-              </button>
+              {/* Add Rule & Check Due Buttons */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleStartAdd}
+                  className="flex-1 py-2.5 px-4 bg-[#FFF0F0] hover:bg-[#ffe4e4] text-[#F46C6C] rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Recurring Rule</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const res = processDueRecurringRules();
+                    if (res && res.appliedCount > 0) {
+                      setAppliedNotice(
+                        `Processed ${res.appliedCount} rule${res.appliedCount > 1 ? 's' : ''}: ${res.appliedTitles.join(', ')}`
+                      );
+                      setTimeout(() => setAppliedNotice(null), 5000);
+                    } else {
+                      setAppliedNotice('All recurring rules are up to date.');
+                      setTimeout(() => setAppliedNotice(null), 3000);
+                    }
+                  }}
+                  className="py-2.5 px-3 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all border border-gray-200"
+                  title="Check and apply any due recurring rules immediately"
+                >
+                  <Repeat className="w-3.5 h-3.5 text-[#58B5A7]" />
+                  <span>Check Due</span>
+                </button>
+              </div>
+
+              {/* Notification Banner */}
+              {appliedNotice && (
+                <div className="p-2.5 bg-[#E8F8F5] border border-[#58B5A7]/40 rounded-xl text-xs text-[#2C5E6E] font-medium flex items-center gap-2 animate-in fade-in duration-150">
+                  <CheckCircle2 className="w-4 h-4 text-[#58B5A7] shrink-0" />
+                  <span>{appliedNotice}</span>
+                </div>
+              )}
 
               {/* Recurring Rules List */}
               <div className="space-y-2.5">
@@ -354,7 +415,7 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
                         <button
                           key={d}
                           type="button"
-                          onClick={() => setDayOfMonth(d)}
+                          onClick={() => handleDayOfMonthChange(d)}
                           className={`h-8 rounded-lg text-xs font-bold flex items-center justify-center transition-all ${
                             isSelected
                               ? 'bg-[#F46C6C] text-white shadow-xs scale-105'
@@ -371,21 +432,21 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
                   <div className="flex gap-1.5 pt-1">
                     <button
                       type="button"
-                      onClick={() => setDayOfMonth(1)}
+                      onClick={() => handleDayOfMonthChange(1)}
                       className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-gray-100 rounded-md border border-gray-200 text-gray-600"
                     >
                       1st of month
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDayOfMonth(15)}
+                      onClick={() => handleDayOfMonthChange(15)}
                       className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-gray-100 rounded-md border border-gray-200 text-gray-600"
                     >
                       15th (Mid-month)
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDayOfMonth(28)}
+                      onClick={() => handleDayOfMonthChange(28)}
                       className="text-[10px] font-bold px-2 py-1 bg-white hover:bg-gray-100 rounded-md border border-gray-200 text-gray-600"
                     >
                       28th
@@ -401,7 +462,17 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
                     <input
                       type="date"
                       value={nextDate}
-                      onChange={(e) => setNextDate(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNextDate(val);
+                        if (val) {
+                          const parts = val.split('-');
+                          if (parts.length === 3) {
+                            const day = parseInt(parts[2], 10);
+                            if (!isNaN(day)) setDayOfMonth(day);
+                          }
+                        }
+                      }}
                       className="text-xs font-bold text-[#2D3748] bg-white border border-gray-200 rounded-xl px-2.5 py-1 outline-hidden"
                     />
                   </div>

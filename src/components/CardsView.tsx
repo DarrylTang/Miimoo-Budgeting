@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   CreditCard as CardIcon,
   Plus,
@@ -33,9 +33,18 @@ export function CardsView() {
   const [cardToDelete, setCardToDelete] = useState<CreditCard | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
 
-  // Month reference: default to September 2026
-  const currentMonth = '2026-09';
-  const monthName = 'September 2026';
+  // Month reference: dynamic based on current date
+  const { currentMonth, monthName } = useMemo(() => {
+    const now = new Date();
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return {
+      currentMonth: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+      monthName: `${monthNames[now.getMonth()]} ${now.getFullYear()}`,
+    };
+  }, []);
 
   // Calculate monthly spend per card
   const getCardSpend = (cardId: string) => {

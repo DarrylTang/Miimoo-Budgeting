@@ -17,12 +17,16 @@ type MetricType = 'Expense' | 'Income' | 'Net Income' | 'Balance';
 export function AnalyticsView() {
   const { transactions, accounts, categories, isBalanceHidden } = useBudget();
 
+  const now = new Date();
+  const currentRealYear = now.getFullYear();
+  const currentRealMonth = now.getMonth();
+
   // Selected filter states
   const [selectedAccountId, setSelectedAccountId] = useState('all');
   const [metric, setMetric] = useState<MetricType>('Expense');
-  const [selectedYear, setSelectedYear] = useState(2026);
+  const [selectedYear, setSelectedYear] = useState(currentRealYear);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(8); // default Sep (idx 8)
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(currentRealMonth);
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
 
   const monthNames = [
@@ -234,7 +238,7 @@ export function AnalyticsView() {
             {monthlyData.map((item) => {
               const val = Math.abs(getMonthValue(item));
               const heightPercent = maxValue > 0 ? Math.round((val / maxValue) * 100) : 0;
-              const isCurrentMonth = item.monthIndex === 8; // Sep
+              const isCurrentMonth = selectedYear === currentRealYear && item.monthIndex === currentRealMonth;
               const isSelected = selectedMonthIndex === item.monthIndex;
 
               return (

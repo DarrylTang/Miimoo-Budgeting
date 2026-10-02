@@ -71,9 +71,9 @@ export function HomeDashboard({
     toggleBalanceHidden,
   } = useBudget();
 
-  // Current viewed month state: default to Sep 2026 to match seed and screenshots
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonth, setCurrentMonth] = useState(8); // 0-indexed: 8 = September
+  // Current viewed month state: dynamic based on current date
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
   const [searchQuery, setSearchQuery] = useState('');
   const [searchScope, setSearchScope] = useState<'all_months' | 'current_month'>('all_months');
   const [searchTypeFilter, setSearchTypeFilter] = useState<
@@ -838,7 +838,7 @@ export function HomeDashboard({
           )}
         </button>
 
-        {/* Center: Month Selector (< Sep 2026 >) or Global Search Scope indicator */}
+        {/* Center: Month Selector (< Month Year >) or Global Search Scope indicator */}
         {isSearchOpen && searchScope === 'all_months' ? (
           <div className="flex items-center gap-1.5 px-3 py-1 bg-white rounded-full border border-gray-200/80 shadow-2xs">
             <Globe className="w-3.5 h-3.5 text-[#58B5A7]" />

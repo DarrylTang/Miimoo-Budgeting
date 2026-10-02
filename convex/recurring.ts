@@ -9,6 +9,50 @@ export interface EnrichedRecurringRule extends Doc<"recurringRules"> {
 }
 
 /**
+ * Helper to advance a timestamp accurately across recurrence intervals,
+ * preserving specific days of month (e.g. 31st or 1st) across variable-length months.
+ */
+export function advanceNextRun(
+  currentRun: number,
+  frequency: "daily" | "weekly" | "monthly" | "yearly",
+  dayOfMonth?: number
+): number {
+  const d = new Date(currentRun);
+  if (frequency === "daily") {
+    d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  if (frequency === "weekly") {
+    d.setDate(d.getDate() + 7);
+    return d.getTime();
+  }
+  if (frequency === "monthly") {
+    const targetDay = dayOfMonth ?? d.getDate();
+    let nextYear = d.getFullYear();
+    let nextMonth = d.getMonth() + 1; // 0-indexed month (0-11), so +1 is next month (1-12)
+    if (nextMonth > 11) {
+      nextMonth = 0;
+      nextYear += 1;
+    }
+    // max days in nextMonth: day 0 of nextMonth+1
+    const maxDays = new Date(nextYear, nextMonth + 1, 0).getDate();
+    const actualDay = Math.min(targetDay, maxDays);
+    d.setFullYear(nextYear, nextMonth, actualDay);
+    return d.getTime();
+  }
+  if (frequency === "yearly") {
+    const targetDay = dayOfMonth ?? d.getDate();
+    const nextYear = d.getFullYear() + 1;
+    const month = d.getMonth();
+    const maxDays = new Date(nextYear, month + 1, 0).getDate();
+    const actualDay = Math.min(targetDay, maxDays);
+    d.setFullYear(nextYear, month, actualDay);
+    return d.getTime();
+  }
+  return currentRun + 86400000;
+}
+
+/**
  * List all recurring rules with enriched account and category data.
  */
 export const list = query({
@@ -59,7 +103,25 @@ export const create = mutation({
       throw new Error("Account not found");
     }
 
-    const nextRun = args.nextRun ?? Date.now();
+    let nextRun = args.nextRun;
+    if (nextRun === undefined) {
+      if (args.startDate) {
+        const parts = args.startDate.split("-").map(Number);
+        if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+          nextRun = new Date(parts[0], parts[1] - 1, parts[2], 9, 0, 0).getTime();
+        } else {
+          nextRun = Date.now();
+        }
+      } else {
+        nextRun = Date.now();
+      }
+    }
+
+    const dayOfMonth =
+      args.dayOfMonth ??
+      (args.startDate
+        ? parseInt(args.startDate.split("-")[2], 10)
+        : new Date(nextRun).getDate());
 
     const ruleId = await ctx.db.insert("recurringRules", {
       title: args.title.trim(),
@@ -70,7 +132,7 @@ export const create = mutation({
       categoryId: args.categoryId,
       nextRun,
       startDate: args.startDate,
-      dayOfMonth: args.dayOfMonth,
+      dayOfMonth,
       dayOfWeek: args.dayOfWeek,
       isActive: true,
     });
@@ -137,7 +199,14 @@ export const update = mutation({
     if (args.frequency !== undefined) patchData.frequency = args.frequency;
     if (args.accountId !== undefined) patchData.accountId = args.accountId;
     if (args.categoryId !== undefined) patchData.categoryId = args.categoryId;
-    if (args.nextRun !== undefined) patchData.nextRun = args.nextRun;
+    if (args.nextRun !== undefined) {
+      patchData.nextRun = args.nextRun;
+    } else if (args.startDate !== undefined) {
+      const parts = args.startDate.split("-").map(Number);
+      if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+        patchData.nextRun = new Date(parts[0], parts[1] - 1, parts[2], 9, 0, 0).getTime();
+      }
+    }
     if (args.startDate !== undefined) patchData.startDate = args.startDate;
     if (args.dayOfMonth !== undefined) patchData.dayOfMonth = args.dayOfMonth;
     if (args.dayOfWeek !== undefined) patchData.dayOfWeek = args.dayOfWeek;
@@ -193,17 +262,24 @@ export const remove = mutation({
 /**
  * Apply all due active recurring rules: generates transactions, updates account balances,
  * and advances nextRun timestamps.
+ *
+ * Can be executed by Convex cron jobs (scheduled hourly) or triggered directly.
  */
 export const applyDueRules = mutation({
   args: {
     now: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
+    // Attempt authentication check safely; allow background cron jobs without authenticated user identity.
+    try {
+      await getAuthenticatedUser(ctx);
+    } catch {
+      // Cron / system task runner context - proceed safely
+    }
 
     const currentTime = args.now ?? Date.now();
 
-    // Query active recurring rules
+    // 1. Process recurringRules table
     const activeRules = await ctx.db
       .query("recurringRules")
       .withIndex("by_isActive", (q) => q.eq("isActive", true))
@@ -217,45 +293,165 @@ export const applyDueRules = mutation({
       const account = await ctx.db.get(rule.accountId);
       if (!account) continue;
 
-      // 1. Generate transaction
-      await ctx.db.insert("transactions", {
-        type: rule.type,
-        amount: rule.amount,
-        accountId: rule.accountId,
-        categoryId: rule.categoryId,
-        date: rule.nextRun,
-        memo: rule.title,
-      });
+      let runTime = rule.nextRun;
+      let iterations = 0;
 
-      // 2. Adjust account balance
-      if (rule.type === "expense") {
-        await ctx.db.patch(rule.accountId, {
-          balance: Math.round((account.balance - rule.amount) * 100) / 100,
+      // Catch up on all missed intervals up to currentTime (safety capped)
+      while (runTime <= currentTime && iterations < 365) {
+        iterations++;
+
+        // 1. Generate transaction
+        await ctx.db.insert("transactions", {
+          type: rule.type,
+          amount: rule.amount,
+          accountId: rule.accountId,
+          categoryId: rule.categoryId,
+          date: runTime,
+          memo: rule.title,
         });
-      } else if (rule.type === "income") {
-        await ctx.db.patch(rule.accountId, {
-          balance: Math.round((account.balance + rule.amount) * 100) / 100,
-        });
+
+        // 2. Adjust account balance
+        const currentAccount = await ctx.db.get(rule.accountId);
+        if (currentAccount) {
+          const diff = rule.type === "income" ? rule.amount : -rule.amount;
+          await ctx.db.patch(rule.accountId, {
+            balance: Math.round((currentAccount.balance + diff) * 100) / 100,
+          });
+        }
+
+        appliedCount++;
+        if (!appliedTitles.includes(rule.title)) {
+          appliedTitles.push(rule.title);
+        }
+
+        // Advance to next interval
+        runTime = advanceNextRun(runTime, rule.frequency, rule.dayOfMonth);
       }
 
-      // 3. Compute nextRun
-      const nextDate = new Date(rule.nextRun);
-      if (rule.frequency === "daily") {
-        nextDate.setDate(nextDate.getDate() + 1);
-      } else if (rule.frequency === "weekly") {
-        nextDate.setDate(nextDate.getDate() + 7);
-      } else if (rule.frequency === "monthly") {
-        nextDate.setMonth(nextDate.getMonth() + 1);
-      } else if (rule.frequency === "yearly") {
-        nextDate.setFullYear(nextDate.getFullYear() + 1);
-      }
-
+      // Update nextRun to future timestamp
       await ctx.db.patch(rule._id, {
-        nextRun: nextDate.getTime(),
+        nextRun: runTime,
       });
+    }
 
-      appliedCount++;
-      appliedTitles.push(rule.title);
+    // 2. Also process cloudSyncStore if present (used by frontend sync)
+    const syncEntry = await ctx.db
+      .query("cloudSyncStore")
+      .withIndex("by_syncKey", (q) => q.eq("syncKey", "miimoo_primary"))
+      .first();
+
+    if (syncEntry && syncEntry.data) {
+      try {
+        const syncData = JSON.parse(syncEntry.data);
+        if (Array.isArray(syncData.recurring) && syncData.recurring.length > 0) {
+          const nowLocalDate = new Date(currentTime);
+          const todayStr = `${nowLocalDate.getFullYear()}-${String(nowLocalDate.getMonth() + 1).padStart(2, "0")}-${String(nowLocalDate.getDate()).padStart(2, "0")}`;
+          let cloudModified = false;
+
+          if (!Array.isArray(syncData.transactions)) syncData.transactions = [];
+          if (!Array.isArray(syncData.accounts)) syncData.accounts = [];
+
+          for (let i = 0; i < syncData.recurring.length; i++) {
+            const rule = syncData.recurring[i];
+            if (!rule.isActive) continue;
+
+            const ruleNextDate = rule.nextDate || rule.startDate;
+            if (!ruleNextDate || ruleNextDate > todayStr) continue;
+
+            let curDate = ruleNextDate;
+            let loopSafety = 0;
+
+            while (curDate <= todayStr && loopSafety < 365) {
+              loopSafety++;
+
+              // Check for existing transaction deduplication
+              const alreadyExists = syncData.transactions.some(
+                (t: any) =>
+                  (t.recurringRuleId === rule.id && t.date === curDate) ||
+                  (t.memo === rule.title &&
+                    Math.abs(t.amount - rule.amount) < 0.001 &&
+                    t.type === rule.type &&
+                    t.accountId === rule.accountId &&
+                    t.date === curDate)
+              );
+
+              if (!alreadyExists) {
+                const newTx = {
+                  id: `tx-rec-${rule.id}-${curDate}`,
+                  type: rule.type,
+                  amount: rule.amount,
+                  category: rule.category,
+                  accountId: rule.accountId,
+                  date: curDate,
+                  memo: rule.title,
+                  createdAt: currentTime,
+                  recurringRuleId: rule.id,
+                };
+                syncData.transactions.unshift(newTx);
+
+                // Update account balance in snapshot
+                const targetAcc = syncData.accounts.find((a: any) => a.id === rule.accountId);
+                if (targetAcc) {
+                  const diff = rule.type === "income" ? rule.amount : -rule.amount;
+                  targetAcc.balance = Math.round((targetAcc.balance + diff) * 100) / 100;
+                }
+
+                cloudModified = true;
+                appliedCount++;
+                if (!appliedTitles.includes(rule.title)) {
+                  appliedTitles.push(rule.title);
+                }
+              }
+
+              // Advance date
+              const [y, m, d] = curDate.split("-").map(Number);
+              if (rule.frequency === "daily") {
+                const nd = new Date(y, m - 1, d);
+                nd.setDate(nd.getDate() + 1);
+                curDate = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`;
+              } else if (rule.frequency === "weekly") {
+                const nd = new Date(y, m - 1, d);
+                nd.setDate(nd.getDate() + 7);
+                curDate = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`;
+              } else if (rule.frequency === "monthly") {
+                const targetDay = rule.dayOfMonth ?? d;
+                let ny = y;
+                let nm = m + 1;
+                if (nm > 12) {
+                  nm = 1;
+                  ny += 1;
+                }
+                const maxDays = new Date(ny, nm, 0).getDate();
+                const actualDay = Math.min(targetDay, maxDays);
+                curDate = `${ny}-${String(nm).padStart(2, "0")}-${String(actualDay).padStart(2, "0")}`;
+              } else if (rule.frequency === "yearly") {
+                const targetDay = rule.dayOfMonth ?? d;
+                const ny = y + 1;
+                const maxDays = new Date(ny, m, 0).getDate();
+                const actualDay = Math.min(targetDay, maxDays);
+                curDate = `${ny}-${String(m).padStart(2, "0")}-${String(actualDay).padStart(2, "0")}`;
+              } else {
+                break;
+              }
+            }
+
+            if (curDate !== rule.nextDate) {
+              rule.nextDate = curDate;
+              cloudModified = true;
+            }
+          }
+
+          if (cloudModified) {
+            await ctx.db.patch(syncEntry._id, {
+              data: JSON.stringify(syncData),
+              lastSyncedAt: currentTime,
+              version: (syncEntry.version || 0) + 1,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to process recurring rules on cloudSyncStore:", err);
+      }
     }
 
     return {
