@@ -7,7 +7,6 @@ import {
   Edit2,
   Trash2,
   Check,
-  RotateCcw,
   AlertCircle,
   Search,
 } from 'lucide-react';
@@ -43,7 +42,6 @@ export function ManageCategoriesModal({ isOpen, onClose }: ManageCategoriesModal
     addCategory,
     updateCategory,
     deleteCategory,
-    resetCategoriesToDefault,
   } = useBudget();
 
   // Mode: 'list' | 'add' | 'edit'
@@ -68,9 +66,6 @@ export function ManageCategoriesModal({ isOpen, onClose }: ManageCategoriesModal
 
   // Delete confirmation state
   const [categoryToDelete, setCategoryToDelete] = useState<CategoryItem | null>(null);
-
-  // Reset confirmation state
-  const [confirmReset, setConfirmReset] = useState(false);
 
   // Calculate usage counts per category name
   const usageCountMap = useMemo(() => {
@@ -174,16 +169,6 @@ export function ManageCategoriesModal({ isOpen, onClose }: ManageCategoriesModal
     setCategoryToDelete(null);
   };
 
-  const handleResetToDefaults = () => {
-    if (confirmReset) {
-      resetCategoriesToDefault();
-      setConfirmReset(false);
-    } else {
-      setConfirmReset(true);
-      setTimeout(() => setConfirmReset(false), 4000);
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center select-none">
       {/* Backdrop */}
@@ -216,22 +201,7 @@ export function ManageCategoriesModal({ isOpen, onClose }: ManageCategoriesModal
             {viewMode === 'edit' && 'Edit Category'}
           </h2>
 
-          <div className="w-8 flex justify-end">
-            {viewMode === 'list' && (
-              <button
-                type="button"
-                onClick={handleResetToDefaults}
-                title="Reset categories to default"
-                className={`p-1.5 rounded-lg transition-colors text-xs ${
-                  confirmReset
-                    ? 'bg-red-50 text-red-600 font-bold'
-                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+          <div className="w-8" />
         </div>
 
         {/* Modal Body */}
@@ -286,22 +256,6 @@ export function ManageCategoriesModal({ isOpen, onClose }: ManageCategoriesModal
                   <span>Add</span>
                 </button>
               </div>
-
-              {/* Reset warning toast */}
-              {confirmReset && (
-                <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-600 animate-in fade-in">
-                  <div className="flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>Tap reset icon again to restore defaults</span>
-                  </div>
-                  <button
-                    onClick={() => setConfirmReset(false)}
-                    className="text-red-400 hover:text-red-600"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
 
               {/* Categories Cards List */}
               <div className="space-y-2">

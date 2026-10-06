@@ -87,6 +87,7 @@ export function NewEntryModal({
   // Track modal open state and editing transaction across renders
   const wasOpenRef = useRef(false);
   const prevEditingTxRef = useRef<Transaction | null | undefined>(undefined);
+  const amountInputRef = useRef<HTMLInputElement>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   // Initialize form when opened or editing
@@ -101,6 +102,17 @@ export function NewEntryModal({
 
     wasOpenRef.current = true;
     prevEditingTxRef.current = editingTransaction;
+
+    // Focus amount input when modal opens
+    if (isNewlyOpened) {
+      const focusTimer = setTimeout(() => {
+        amountInputRef.current?.focus();
+        if (editingTransaction) {
+          amountInputRef.current?.select();
+        }
+      }, 50);
+      return () => clearTimeout(focusTimer);
+    }
 
     // Only reset/initialize state when the modal opens for a new session or editingTransaction changes
     if (!isNewlyOpened && !isEditingTxChanged) {
@@ -261,6 +273,7 @@ export function NewEntryModal({
       setIsCalculatorOpen(false);
       setCalcExpression('');
       setCalcPreview(null);
+      setTimeout(() => amountInputRef.current?.focus(), 50);
     } else {
       onClose();
     }
@@ -367,6 +380,8 @@ export function NewEntryModal({
                 $
               </span>
               <input
+                ref={amountInputRef}
+                autoFocus
                 type="text"
                 inputMode="decimal"
                 value={amountStr}
