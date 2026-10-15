@@ -56,11 +56,21 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
     if (nextDate) {
       const parts = nextDate.split('-');
       if (parts.length === 3) {
-        const year = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10);
-        const maxDays = new Date(year, month, 0).getDate();
-        const clamped = Math.min(d, maxDays);
-        setNextDate(`${parts[0]}-${parts[1]}-${String(clamped).padStart(2, '0')}`);
+        let year = parseInt(parts[0], 10);
+        let month = parseInt(parts[1], 10);
+        const build = () =>
+          `${year}-${String(month).padStart(2, '0')}-${String(Math.min(d, new Date(year, month, 0).getDate())).padStart(2, '0')}`;
+        let candidate = build();
+        // Don't schedule into the past (it would immediately back-post a transaction); roll to next month
+        if (candidate < getLocalDateString()) {
+          month += 1;
+          if (month > 12) {
+            month = 1;
+            year += 1;
+          }
+          candidate = build();
+        }
+        setNextDate(candidate);
       }
     }
   };
@@ -114,6 +124,15 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
     const val = parseFloat(amount);
     if (!title.trim() || !val || val <= 0) return;
 
+    // Weekly rules advance 7 days from nextDate, so align it to the chosen weekday (on/after start date)
+    let runDate = nextDate;
+    if (frequency === 'weekly' && runDate) {
+      const [y, m, d] = runDate.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      while (WEEKDAYS[(dt.getDay() + 6) % 7] !== weekday) dt.setDate(dt.getDate() + 1);
+      runDate = getLocalDateString(dt);
+    }
+
     if (editingRule) {
       updateRecurringRule(editingRule.id, {
         title: title.trim(),
@@ -122,7 +141,7 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
         category,
         accountId,
         frequency,
-        nextDate,
+        nextDate: runDate,
         dayOfMonth: frequency === 'monthly' ? dayOfMonth : undefined,
         weekday: frequency === 'weekly' ? weekday : undefined,
       });
@@ -134,7 +153,7 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
         category,
         accountId,
         frequency,
-        nextDate,
+        nextDate: runDate,
         dayOfMonth: frequency === 'monthly' ? dayOfMonth : undefined,
         weekday: frequency === 'weekly' ? weekday : undefined,
         isActive: true,

@@ -530,6 +530,14 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (newTransactions.length > 0 || anyRuleUpdated) {
+      // Update the ref immediately so a second call before the next render (StrictMode, focus + interval,
+      // opening the Recurring modal) sees these results instead of re-applying the same rules.
+      stateRef.current = {
+        ...stateRef.current,
+        recurring: updatedRecurring,
+        transactions: [...newTransactions, ...currentTransactions],
+      };
+
       if (anyRuleUpdated) {
         setRecurring(updatedRecurring);
       }
