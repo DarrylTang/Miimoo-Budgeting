@@ -103,17 +103,6 @@ export function NewEntryModal({
     wasOpenRef.current = true;
     prevEditingTxRef.current = editingTransaction;
 
-    // Focus amount input when modal opens
-    if (isNewlyOpened) {
-      const focusTimer = setTimeout(() => {
-        amountInputRef.current?.focus();
-        if (editingTransaction) {
-          amountInputRef.current?.select();
-        }
-      }, 50);
-      return () => clearTimeout(focusTimer);
-    }
-
     // Only reset/initialize state when the modal opens for a new session or editingTransaction changes
     if (!isNewlyOpened && !isEditingTxChanged) {
       return;
@@ -156,6 +145,17 @@ export function NewEntryModal({
       setIsCalculatorOpen(false);
       setCalcExpression('');
       setCalcPreview(null);
+    }
+
+    // Focus amount input when modal opens (after the form is populated)
+    if (isNewlyOpened) {
+      const focusTimer = setTimeout(() => {
+        amountInputRef.current?.focus();
+        if (editingTransaction) {
+          amountInputRef.current?.select();
+        }
+      }, 50);
+      return () => clearTimeout(focusTimer);
     }
   }, [editingTransaction, isOpen, accounts, cards, activeAccountId]);
   /* eslint-enable react-hooks/set-state-in-effect */
