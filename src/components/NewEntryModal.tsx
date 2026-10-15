@@ -240,7 +240,19 @@ export function NewEntryModal({
 
     const effectiveCardId = type === 'expense' && selectedCardId ? selectedCardId : undefined;
 
-    if (type === 'transfer') {
+    if (type === 'transfer' && editingTransaction) {
+      // Edit the existing transfer in place (creating a new one duplicated it)
+      updateTransaction(editingTransaction.id, {
+        type,
+        amount: parsedAmount,
+        category: 'Transfer',
+        accountId: selectedAccountId,
+        cardId: undefined,
+        toAccountId,
+        date: dateStr,
+        memo,
+      });
+    } else if (type === 'transfer') {
       transferMoney(selectedAccountId, toAccountId, parsedAmount, memo, dateStr);
     } else if (editingTransaction) {
       updateTransaction(editingTransaction.id, {

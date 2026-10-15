@@ -1,340 +1,22 @@
-import { query, mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { getAuthenticatedUser } from "./auth";
-import { Doc, Id } from "./_generated/dataModel";
-
-export interface EnrichedRecurringRule extends Doc<"recurringRules"> {
-  account?: Doc<"accounts"> | null;
-  category?: Doc<"categories"> | null;
-}
 
 /**
- * Helper to advance a timestamp accurately across recurrence intervals,
- * preserving specific days of month (e.g. 31st or 1st) across variable-length months.
- */
-export function advanceNextRun(
-  currentRun: number,
-  frequency: "daily" | "weekly" | "monthly" | "yearly",
-  dayOfMonth?: number
-): number {
-  const d = new Date(currentRun);
-  if (frequency === "daily") {
-    d.setDate(d.getDate() + 1);
-    return d.getTime();
-  }
-  if (frequency === "weekly") {
-    d.setDate(d.getDate() + 7);
-    return d.getTime();
-  }
-  if (frequency === "monthly") {
-    const targetDay = dayOfMonth ?? d.getDate();
-    let nextYear = d.getFullYear();
-    let nextMonth = d.getMonth() + 1; // 0-indexed month (0-11), so +1 is next month (1-12)
-    if (nextMonth > 11) {
-      nextMonth = 0;
-      nextYear += 1;
-    }
-    // max days in nextMonth: day 0 of nextMonth+1
-    const maxDays = new Date(nextYear, nextMonth + 1, 0).getDate();
-    const actualDay = Math.min(targetDay, maxDays);
-    d.setFullYear(nextYear, nextMonth, actualDay);
-    return d.getTime();
-  }
-  if (frequency === "yearly") {
-    const targetDay = dayOfMonth ?? d.getDate();
-    const nextYear = d.getFullYear() + 1;
-    const month = d.getMonth();
-    const maxDays = new Date(nextYear, month + 1, 0).getDate();
-    const actualDay = Math.min(targetDay, maxDays);
-    d.setFullYear(nextYear, month, actualDay);
-    return d.getTime();
-  }
-  return currentRun + 86400000;
-}
-
-/**
- * List all recurring rules with enriched account and category data.
- */
-export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const rules = await ctx.db.query("recurringRules").collect();
-
-    const enriched: EnrichedRecurringRule[] = [];
-    for (const rule of rules) {
-      const account = await ctx.db.get(rule.accountId);
-      const category = rule.categoryId ? await ctx.db.get(rule.categoryId) : null;
-      enriched.push({
-        ...rule,
-        account,
-        category,
-      });
-    }
-
-    return enriched;
-  },
-});
-
-/**
- * Create a new recurring rule.
- */
-export const create = mutation({
-  args: {
-    title: v.string(),
-    amount: v.number(),
-    type: v.union(v.literal("expense"), v.literal("income")),
-    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"), v.literal("yearly")),
-    accountId: v.id("accounts"),
-    categoryId: v.optional(v.id("categories")),
-    nextRun: v.optional(v.number()),
-    startDate: v.optional(v.string()),
-    dayOfMonth: v.optional(v.number()),
-    dayOfWeek: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
-
-    if (args.amount <= 0) {
-      throw new Error("Amount must be greater than zero");
-    }
-
-    const account = await ctx.db.get(args.accountId);
-    if (!account) {
-      throw new Error("Account not found");
-    }
-
-    let nextRun = args.nextRun;
-    if (nextRun === undefined) {
-      if (args.startDate) {
-        const parts = args.startDate.split("-").map(Number);
-        if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-          nextRun = new Date(parts[0], parts[1] - 1, parts[2], 9, 0, 0).getTime();
-        } else {
-          nextRun = Date.now();
-        }
-      } else {
-        nextRun = Date.now();
-      }
-    }
-
-    const dayOfMonth =
-      args.dayOfMonth ??
-      (args.startDate
-        ? parseInt(args.startDate.split("-")[2], 10)
-        : new Date(nextRun).getDate());
-
-    const ruleId = await ctx.db.insert("recurringRules", {
-      title: args.title.trim(),
-      amount: args.amount,
-      type: args.type,
-      frequency: args.frequency,
-      accountId: args.accountId,
-      categoryId: args.categoryId,
-      nextRun,
-      startDate: args.startDate,
-      dayOfMonth,
-      dayOfWeek: args.dayOfWeek,
-      isActive: true,
-    });
-
-    return ruleId;
-  },
-});
-
-/**
- * Update an existing recurring rule schedule or details.
- * Strictly preserves past transactions!
- */
-export const update = mutation({
-  args: {
-    id: v.id("recurringRules"),
-    title: v.optional(v.string()),
-    amount: v.optional(v.number()),
-    type: v.optional(v.union(v.literal("expense"), v.literal("income"))),
-    frequency: v.optional(v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"), v.literal("yearly"))),
-    accountId: v.optional(v.id("accounts")),
-    categoryId: v.optional(v.id("categories")),
-    nextRun: v.optional(v.number()),
-    startDate: v.optional(v.string()),
-    dayOfMonth: v.optional(v.number()),
-    dayOfWeek: v.optional(v.string()),
-    isActive: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
-
-    const rule = await ctx.db.get(args.id);
-    if (!rule) {
-      throw new Error("Recurring rule not found");
-    }
-
-    if (args.amount !== undefined && args.amount <= 0) {
-      throw new Error("Amount must be greater than zero");
-    }
-
-    if (args.accountId !== undefined) {
-      const account = await ctx.db.get(args.accountId);
-      if (!account) {
-        throw new Error("Account not found");
-      }
-    }
-
-    const patchData: {
-      title?: string;
-      amount?: number;
-      type?: "expense" | "income";
-      frequency?: "daily" | "weekly" | "monthly" | "yearly";
-      accountId?: Id<"accounts">;
-      categoryId?: Id<"categories">;
-      nextRun?: number;
-      startDate?: string;
-      dayOfMonth?: number;
-      dayOfWeek?: string;
-      isActive?: boolean;
-    } = {};
-
-    if (args.title !== undefined) patchData.title = args.title.trim();
-    if (args.amount !== undefined) patchData.amount = args.amount;
-    if (args.type !== undefined) patchData.type = args.type;
-    if (args.frequency !== undefined) patchData.frequency = args.frequency;
-    if (args.accountId !== undefined) patchData.accountId = args.accountId;
-    if (args.categoryId !== undefined) patchData.categoryId = args.categoryId;
-    if (args.nextRun !== undefined) {
-      patchData.nextRun = args.nextRun;
-    } else if (args.startDate !== undefined) {
-      const parts = args.startDate.split("-").map(Number);
-      if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-        patchData.nextRun = new Date(parts[0], parts[1] - 1, parts[2], 9, 0, 0).getTime();
-      }
-    }
-    if (args.startDate !== undefined) patchData.startDate = args.startDate;
-    if (args.dayOfMonth !== undefined) patchData.dayOfMonth = args.dayOfMonth;
-    if (args.dayOfWeek !== undefined) patchData.dayOfWeek = args.dayOfWeek;
-    if (args.isActive !== undefined) patchData.isActive = args.isActive;
-
-    await ctx.db.patch(args.id, patchData);
-    return args.id;
-  },
-});
-
-/**
- * Toggle whether a recurring rule is active.
- */
-export const toggle = mutation({
-  args: {
-    id: v.id("recurringRules"),
-    isActive: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
-
-    const rule = await ctx.db.get(args.id);
-    if (!rule) {
-      throw new Error("Recurring rule not found");
-    }
-
-    const newActive = args.isActive !== undefined ? args.isActive : !rule.isActive;
-    await ctx.db.patch(args.id, { isActive: newActive });
-    return args.id;
-  },
-});
-
-/**
- * Remove a recurring rule.
- */
-export const remove = mutation({
-  args: {
-    id: v.id("recurringRules"),
-  },
-  handler: async (ctx, args) => {
-    await getAuthenticatedUser(ctx);
-
-    const rule = await ctx.db.get(args.id);
-    if (!rule) {
-      throw new Error("Recurring rule not found");
-    }
-
-    await ctx.db.delete(args.id);
-    return args.id;
-  },
-});
-
-/**
- * Apply all due active recurring rules: generates transactions, updates account balances,
- * and advances nextRun timestamps.
+ * Apply due recurring rules inside the cloud sync snapshot (the app's only data store):
+ * generates transactions and advances each rule's nextDate. Account balances are derived
+ * from transactions on the client, so they are not touched here.
  *
- * Can be executed by Convex cron jobs (scheduled hourly) or triggered directly.
+ * Internal: only callable by the cron in crons.ts, not by clients.
  */
-export const applyDueRules = mutation({
+export const applyDueRules = internalMutation({
   args: {
     now: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Attempt authentication check safely; allow background cron jobs without authenticated user identity.
-    try {
-      await getAuthenticatedUser(ctx);
-    } catch {
-      // Cron / system task runner context - proceed safely
-    }
-
     const currentTime = args.now ?? Date.now();
-
-    // 1. Process recurringRules table
-    const activeRules = await ctx.db
-      .query("recurringRules")
-      .withIndex("by_isActive", (q) => q.eq("isActive", true))
-      .collect();
-
-    const dueRules = activeRules.filter((r) => r.nextRun <= currentTime);
     let appliedCount = 0;
     const appliedTitles: string[] = [];
 
-    for (const rule of dueRules) {
-      const account = await ctx.db.get(rule.accountId);
-      if (!account) continue;
-
-      let runTime = rule.nextRun;
-      let iterations = 0;
-
-      // Catch up on all missed intervals up to currentTime (safety capped)
-      while (runTime <= currentTime && iterations < 365) {
-        iterations++;
-
-        // 1. Generate transaction
-        await ctx.db.insert("transactions", {
-          type: rule.type,
-          amount: rule.amount,
-          accountId: rule.accountId,
-          categoryId: rule.categoryId,
-          date: runTime,
-          memo: rule.title,
-        });
-
-        // 2. Adjust account balance
-        const currentAccount = await ctx.db.get(rule.accountId);
-        if (currentAccount) {
-          const diff = rule.type === "income" ? rule.amount : -rule.amount;
-          await ctx.db.patch(rule.accountId, {
-            balance: Math.round((currentAccount.balance + diff) * 100) / 100,
-          });
-        }
-
-        appliedCount++;
-        if (!appliedTitles.includes(rule.title)) {
-          appliedTitles.push(rule.title);
-        }
-
-        // Advance to next interval
-        runTime = advanceNextRun(runTime, rule.frequency, rule.dayOfMonth);
-      }
-
-      // Update nextRun to future timestamp
-      await ctx.db.patch(rule._id, {
-        nextRun: runTime,
-      });
-    }
-
-    // 2. Also process cloudSyncStore if present (used by frontend sync)
     const syncEntry = await ctx.db
       .query("cloudSyncStore")
       .withIndex("by_syncKey", (q) => q.eq("syncKey", "miimoo_primary"))
@@ -349,7 +31,7 @@ export const applyDueRules = mutation({
           let cloudModified = false;
 
           if (!Array.isArray(syncData.transactions)) syncData.transactions = [];
-          if (!Array.isArray(syncData.accounts)) syncData.accounts = [];
+          const deletedIds = new Set<string>(Array.isArray(syncData.deletedIds) ? syncData.deletedIds : []);
 
           for (let i = 0; i < syncData.recurring.length; i++) {
             const rule = syncData.recurring[i];
@@ -365,7 +47,7 @@ export const applyDueRules = mutation({
               loopSafety++;
 
               // Check for existing transaction deduplication
-              const alreadyExists = syncData.transactions.some(
+              const alreadyExists = deletedIds.has(`tx-rec-${rule.id}-${curDate}`) || syncData.transactions.some(
                 (t: any) =>
                   (t.recurringRuleId === rule.id && t.date === curDate) ||
                   (t.memo === rule.title &&
@@ -387,14 +69,8 @@ export const applyDueRules = mutation({
                   createdAt: currentTime,
                   recurringRuleId: rule.id,
                 };
+                // Account balances are derived from transactions on the client; no balance edit here
                 syncData.transactions.unshift(newTx);
-
-                // Update account balance in snapshot
-                const targetAcc = syncData.accounts.find((a: any) => a.id === rule.accountId);
-                if (targetAcc) {
-                  const diff = rule.type === "income" ? rule.amount : -rule.amount;
-                  targetAcc.balance = Math.round((targetAcc.balance + diff) * 100) / 100;
-                }
 
                 cloudModified = true;
                 appliedCount++;

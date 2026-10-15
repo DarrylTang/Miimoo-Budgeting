@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, createContext, useContext, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef } from 'react';
 import { Transaction, Account, RecurringRule, CategoryItem, CreditCard, CardColorTheme } from '@/types';
 import { getConvexClient } from '@/lib/convexClient';
 import { api } from '../../convex/_generated/api';
+import { mergeSnapshots } from '../../convex/syncMerge';
 
 /**
  * Returns current date formatted as YYYY-MM-DD in user's local timezone.
@@ -87,8 +88,8 @@ export const DEMO_ACCOUNTS: Account[] = [
 ];
 
 export const CLEAN_ACCOUNTS: Account[] = [
-  { id: 'acc-main', name: 'Main Account (Local)', type: 'local', currency: 'SGD', balance: 0.00, isDefault: true, color: '#F46C6C' },
-  { id: 'acc-overseas', name: 'Overseas Card', type: 'overseas', currency: 'SGD', balance: 0.00, color: '#58B5A7' },
+  { id: 'acc-main', name: 'Main Account (Local)', type: 'local', currency: 'SGD', balance: 0.00, openingBalance: 0, isDefault: true, color: '#F46C6C' },
+  { id: 'acc-overseas', name: 'Overseas Card', type: 'overseas', currency: 'SGD', balance: 0.00, openingBalance: 0, color: '#58B5A7' },
 ];
 
 export const DEFAULT_ACCOUNTS: Account[] = CLEAN_ACCOUNTS;
@@ -226,6 +227,41 @@ export const DELETED_IDS_KEY = 'miimoo_deleted_ids_v1';
 
 const STORAGE_KEY = 'miimoo_budget_data_v1';
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Net effect of transactions on each account (income +, expense/transfer-out -, transfer-in +). */
+function netByAccount(transactions: Transaction[]): Record<string, number> {
+  const net: Record<string, number> = {};
+  for (const t of transactions) {
+    const amt = Number(t.amount) || 0;
+    net[t.accountId] = (net[t.accountId] || 0) + (t.type === 'income' ? amt : -amt);
+    if (t.type === 'transfer' && t.toAccountId) net[t.toAccountId] = (net[t.toAccountId] || 0) + amt;
+  }
+  return net;
+}
+
+/**
+ * Legacy accounts stored a running balance. Convert to an opening balance that reproduces the
+ * balance shown today; balance is then always derived from transactions so devices can't drift.
+ */
+function withOpeningBalances(accounts: Account[], transactions: Transaction[]): Account[] {
+  if (accounts.every((a) => typeof a.openingBalance === 'number')) return accounts;
+  const net = netByAccount(transactions);
+  return accounts.map((a) =>
+    typeof a.openingBalance === 'number'
+      ? a
+      : { ...a, openingBalance: round2((Number(a.balance) || 0) - (net[a.id] || 0)), updatedAt: a.updatedAt ?? 1 }
+  );
+}
+
+/**
+ * Pre-timestamp data gets a weak updatedAt of 1: it beats nothing-stamped cloud data on the first
+ * push after upgrade (keeping unsynced local edits), and ties resolve to the cloud copy afterwards.
+ */
+function stampLegacy<T extends { updatedAt?: number }>(list: T[]): T[] {
+  return list.map((x) => (x.updatedAt ? x : { ...x, updatedAt: 1 }));
+}
+
 interface BudgetState {
   transactions: Transaction[];
   accounts: Account[];
@@ -296,7 +332,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
   const [cards, setCards] = useState<CreditCard[]>(DEFAULT_CARDS);
   const [categories, setCategories] = useState<CategoryItem[]>(DEFAULT_CATEGORIES);
-  const [recurring, setRecurring] = useState<RecurringRule[]>(DEFAULT_RECURRING);
+  const [recurring, setRecurring] = useState<RecurringRule[]>([]);
   const [quickTags, setQuickTags] = useState<string[]>(DEFAULT_QUICK_TAGS);
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
 
@@ -382,15 +418,15 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       let parsed: any = null;
       if (stored) {
         parsed = JSON.parse(stored);
-        if (parsed.transactions) setTransactions(parsed.transactions);
-        if (parsed.accounts) setAccounts(parsed.accounts);
-        if (parsed.cards && Array.isArray(parsed.cards) && parsed.cards.length > 0) {
-          setCards(parsed.cards);
-        } else {
-          setCards(DEFAULT_CARDS);
-        }
-        if (parsed.categories) setCategories(parsed.categories);
-        if (parsed.recurring) setRecurring(parsed.recurring);
+      }
+      if (parsed) {
+        // Stored (user) data only; untouched defaults stay unstamped so they lose to the cloud copy
+        const txs: Transaction[] = Array.isArray(parsed.transactions) ? stampLegacy(parsed.transactions) : [];
+        setTransactions(txs);
+        if (Array.isArray(parsed.accounts)) setAccounts(stampLegacy(withOpeningBalances(parsed.accounts, txs)));
+        if (Array.isArray(parsed.cards)) setCards(stampLegacy(parsed.cards));
+        if (Array.isArray(parsed.categories)) setCategories(stampLegacy(parsed.categories));
+        if (Array.isArray(parsed.recurring)) setRecurring(stampLegacy(parsed.recurring));
         if (parsed.quickTags) setQuickTags(parsed.quickTags);
         if (parsed.userName) setUserName(parsed.userName);
         if (typeof parsed.isBalanceHidden === 'boolean') setIsBalanceHidden(parsed.isBalanceHidden);
@@ -456,7 +492,6 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     }
 
     const newTransactions: Transaction[] = [];
-    const accountDeltas: Record<string, number> = {};
     let anyRuleUpdated = false;
 
     const updatedRecurring = currentRecurring.map((rule) => {
@@ -508,9 +543,6 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
           (newTx as any).recurringRuleId = rule.id;
           newTransactions.push(newTx);
 
-          const diff = rule.type === 'income' ? rule.amount : -rule.amount;
-          accountDeltas[rule.accountId] = (accountDeltas[rule.accountId] || 0) + diff;
-
           appliedCount++;
           if (!appliedTitles.includes(rule.title)) {
             appliedTitles.push(rule.title);
@@ -544,20 +576,6 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
 
       if (newTransactions.length > 0) {
         setTransactions((prev) => [...newTransactions, ...prev]);
-      }
-
-      if (Object.keys(accountDeltas).length > 0) {
-        setAccounts((prevAccs) =>
-          prevAccs.map((acc) => {
-            if (accountDeltas[acc.id] !== undefined) {
-              return {
-                ...acc,
-                balance: Math.round((acc.balance + accountDeltas[acc.id]) * 100) / 100,
-              };
-            }
-            return acc;
-          })
-        );
       }
     }
 
@@ -676,7 +694,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
 
   const loadDemoData = useCallback(() => {
     setTransactions(DEMO_TRANSACTIONS);
-    setAccounts(DEMO_ACCOUNTS);
+    setAccounts(withOpeningBalances(DEMO_ACCOUNTS, DEMO_TRANSACTIONS));
     setCards(DEFAULT_CARDS);
     setCategories(DEFAULT_CATEGORIES);
     setRecurring(DEFAULT_RECURRING);
@@ -707,16 +725,8 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       createdAt: Date.now(),
     };
 
+    // Account balances are derived from transactions (see accountsWithBalance)
     setTransactions(prev => [newTx, ...prev]);
-
-    // Update account balance
-    setAccounts(prev => prev.map(acc => {
-      if (acc.id === txData.accountId) {
-        const diff = txData.type === 'income' ? txData.amount : -txData.amount;
-        return { ...acc, balance: Math.round((acc.balance + diff) * 100) / 100 };
-      }
-      return acc;
-    }));
 
     // If memo exists and is not already in quick tags, add it
     if (txData.memo && txData.memo.trim().length > 1) {
@@ -731,36 +741,32 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const updateTransaction = useCallback((id: string, updates: Partial<Transaction>) => {
     setTransactions(prev => prev.map(tx => {
       if (tx.id !== id) return tx;
-      return { ...tx, ...updates };
+      return { ...tx, ...updates, updatedAt: Date.now() };
     }));
   }, []);
 
   const deleteTransaction = useCallback((id: string) => {
     recordDeletedId(id);
-    setTransactions(prev => {
-      const target = prev.find(t => t.id === id);
-      if (target) {
-        // Reverse account balance effect
-        setAccounts(accs => accs.map(acc => {
-          if (acc.id === target.accountId) {
-            const rev = target.type === 'income' ? -target.amount : target.amount;
-            return { ...acc, balance: Math.round((acc.balance + rev) * 100) / 100 };
-          }
-          return acc;
-        }));
-      }
-      return prev.filter(t => t.id !== id);
-    });
+    setTransactions(prev => prev.filter(t => t.id !== id));
   }, [recordDeletedId]);
 
   const addAccount = useCallback((accData: Omit<Account, 'id'>) => {
     const id = 'acc-' + Date.now();
-    const newAcc: Account = { ...accData, id };
+    const newAcc: Account = { ...accData, openingBalance: accData.balance || 0, id, updatedAt: Date.now() };
     setAccounts(prev => [...prev, newAcc]);
   }, []);
 
   const updateAccount = useCallback((id: string, updates: Partial<Account>) => {
-    setAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...updates } : acc));
+    setAccounts(prev => prev.map(acc => {
+      if (acc.id !== id) return acc;
+      const { balance, ...rest } = updates;
+      const next: Account = { ...acc, ...rest, updatedAt: Date.now() };
+      // "Adjust balance" sets the opening balance so the derived balance lands on the requested value
+      if (typeof balance === 'number') {
+        next.openingBalance = round2(balance - (netByAccount(stateRef.current.transactions)[id] || 0));
+      }
+      return next;
+    }));
   }, []);
 
   const deleteAccount = useCallback((id: string) => {
@@ -769,11 +775,11 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   }, [recordDeletedId]);
 
   const transferMoney = useCallback((fromId: string, toId: string, amount: number, memo?: string, date?: string) => {
-    const txDate = date || new Date().toISOString().split('T')[0];
-    const toAcc = accounts.find(a => a.id === toId);
+    const txDate = date || getLocalDateString();
+    const toAcc = stateRef.current.accounts.find(a => a.id === toId);
 
     const fromTx: Transaction = {
-      id: 'tx-tr-out-' + Date.now(),
+      id: 'tx-tr-out-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       type: 'transfer',
       amount: amount,
       category: 'Transfer',
@@ -785,17 +791,11 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     };
 
     setTransactions(prev => [fromTx, ...prev]);
-
-    setAccounts(prev => prev.map(acc => {
-      if (acc.id === fromId) return { ...acc, balance: Math.round((acc.balance - amount) * 100) / 100 };
-      if (acc.id === toId) return { ...acc, balance: Math.round((acc.balance + amount) * 100) / 100 };
-      return acc;
-    }));
-  }, [accounts]);
+  }, []);
 
   const addRecurringRule = useCallback((rule: Omit<RecurringRule, 'id'>) => {
     const id = 'rec-' + Date.now();
-    const newRule: RecurringRule = { ...rule, id };
+    const newRule: RecurringRule = { ...rule, id, updatedAt: Date.now() };
     setRecurring(prev => {
       const nextList = [...prev, newRule];
       setTimeout(() => processDueRecurringRules(undefined, nextList), 10);
@@ -805,7 +805,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
 
   const updateRecurringRule = useCallback((id: string, updates: Partial<RecurringRule>) => {
     setRecurring(prev => {
-      const nextList = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+      const nextList = prev.map(r => r.id === id ? { ...r, ...updates, updatedAt: Date.now() } : r);
       setTimeout(() => processDueRecurringRules(undefined, nextList), 10);
       return nextList;
     });
@@ -813,7 +813,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
 
   const toggleRecurringRule = useCallback((id: string) => {
     setRecurring(prev => {
-      const nextList = prev.map(r => r.id === id ? { ...r, isActive: !r.isActive } : r);
+      const nextList = prev.map(r => r.id === id ? { ...r, isActive: !r.isActive, updatedAt: Date.now() } : r);
       setTimeout(() => processDueRecurringRules(undefined, nextList), 10);
       return nextList;
     });
@@ -826,21 +826,26 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
 
   const addCard = useCallback((cardData: Omit<CreditCard, 'id'>) => {
     const id = 'card-' + Date.now();
+    const now = Date.now();
     setCards(prev => {
       if (cardData.isDefault || prev.length === 0) {
-        return [...prev.map(c => ({ ...c, isDefault: false })), { ...cardData, isDefault: true, id }];
+        return [
+          ...prev.map(c => (c.isDefault ? { ...c, isDefault: false, updatedAt: now } : c)),
+          { ...cardData, isDefault: true, id, updatedAt: now },
+        ];
       }
-      return [...prev, { ...cardData, id }];
+      return [...prev, { ...cardData, id, updatedAt: now }];
     });
   }, []);
 
   const updateCard = useCallback((id: string, updates: Partial<CreditCard>) => {
+    const now = Date.now();
     setCards(prev => prev.map(c => {
       if (c.id === id) {
-        return { ...c, ...updates };
+        return { ...c, ...updates, updatedAt: now };
       }
-      if (updates.isDefault) {
-        return { ...c, isDefault: false };
+      if (updates.isDefault && c.isDefault) {
+        return { ...c, isDefault: false, updatedAt: now };
       }
       return c;
     }));
@@ -852,19 +857,20 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       const filtered = prev.filter(c => c.id !== id);
       const deletedWasDefault = prev.find(c => c.id === id)?.isDefault;
       if (deletedWasDefault && filtered.length > 0) {
-        filtered[0] = { ...filtered[0], isDefault: true };
+        filtered[0] = { ...filtered[0], isDefault: true, updatedAt: Date.now() };
       }
       return filtered;
     });
   }, [recordDeletedId]);
 
   const setDefaultCard = useCallback((id: string) => {
-    setCards(prev => prev.map(c => ({ ...c, isDefault: c.id === id })));
+    const now = Date.now();
+    setCards(prev => prev.map(c => (c.isDefault === (c.id === id) ? c : { ...c, isDefault: c.id === id, updatedAt: now })));
   }, []);
 
   const addCategory = useCallback((cat: Omit<CategoryItem, 'id'>) => {
     const id = 'cat-' + Date.now();
-    setCategories(prev => [...prev, { ...cat, id }]);
+    setCategories(prev => [...prev, { ...cat, id, updatedAt: Date.now() }]);
   }, []);
 
   const updateCategory = useCallback((id: string, updates: Partial<CategoryItem>) => {
@@ -874,16 +880,19 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       const oldName = oldCat?.name;
 
       // If category name changed, cascade to transactions, recurring rules, and cards
+      // (stamped so the rename isn't reverted by another device's older copy)
+      const now = Date.now();
       if (oldName && newName && oldName !== newName) {
-        setTransactions(txs => txs.map(tx => tx.category === oldName ? { ...tx, category: newName } : tx));
-        setRecurring(recs => recs.map(rec => rec.category === oldName ? { ...rec, category: newName } : rec));
-        setCards(crds => crds.map(crd => ({
-          ...crd,
-          rewardCategories: crd.rewardCategories.map(rCat => rCat === oldName ? newName : rCat),
-        })));
+        setTransactions(txs => txs.map(tx => tx.category === oldName ? { ...tx, category: newName, updatedAt: now } : tx));
+        setRecurring(recs => recs.map(rec => rec.category === oldName ? { ...rec, category: newName, updatedAt: now } : rec));
+        setCards(crds => crds.map(crd =>
+          crd.rewardCategories.includes(oldName)
+            ? { ...crd, rewardCategories: crd.rewardCategories.map(rCat => rCat === oldName ? newName : rCat), updatedAt: now }
+            : crd
+        ));
       }
 
-      return prev.map(c => c.id === id ? { ...c, ...updates, ...(newName ? { name: newName } : {}) } : c);
+      return prev.map(c => c.id === id ? { ...c, ...updates, ...(newName ? { name: newName } : {}), updatedAt: now } : c);
     });
   }, []);
 
@@ -900,11 +909,17 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     setIsBalanceHidden(prev => !prev);
   }, []);
 
+  // Balance is always derived, so every device with the same transactions shows the same balance
+  const accountsWithBalance = useMemo(() => {
+    const net = netByAccount(transactions);
+    return accounts.map((a) => ({ ...a, balance: round2((a.openingBalance ?? 0) + (net[a.id] || 0)) }));
+  }, [accounts, transactions]);
+
   const exportJSON = useCallback(() => {
     const dataToExport = {
       exportDate: new Date().toISOString(),
       userName,
-      accounts,
+      accounts: accountsWithBalance,
       cards,
       transactions,
       categories,
@@ -919,7 +934,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-  }, [userName, accounts, cards, transactions, categories, recurring, quickTags]);
+  }, [userName, accountsWithBalance, cards, transactions, categories, recurring, quickTags]);
 
   const exportCSV = useCallback(() => {
     const headers = ['ID', 'Date', 'Type', 'Amount', 'Category', 'Account', 'Card', 'Memo'];
@@ -951,11 +966,15 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const importJSON = useCallback((jsonData: string): boolean => {
     try {
       const parsed = JSON.parse(jsonData);
-      if (Array.isArray(parsed.transactions)) setTransactions(parsed.transactions);
-      if (Array.isArray(parsed.accounts)) setAccounts(parsed.accounts);
-      if (Array.isArray(parsed.cards)) setCards(parsed.cards);
-      if (Array.isArray(parsed.categories)) setCategories(parsed.categories);
-      if (Array.isArray(parsed.recurring)) setRecurring(parsed.recurring);
+      // Restored items are stamped as fresh edits so they win over older cloud copies
+      const now = Date.now();
+      const stamp = <T extends object>(list: T[]): T[] => list.map((x) => ({ ...x, updatedAt: now }));
+      const txs: Transaction[] = Array.isArray(parsed.transactions) ? stamp(parsed.transactions) : stateRef.current.transactions;
+      if (Array.isArray(parsed.transactions)) setTransactions(txs);
+      if (Array.isArray(parsed.accounts)) setAccounts(stamp(withOpeningBalances(parsed.accounts, txs)));
+      if (Array.isArray(parsed.cards)) setCards(stamp(parsed.cards));
+      if (Array.isArray(parsed.categories)) setCategories(stamp(parsed.categories));
+      if (Array.isArray(parsed.recurring)) setRecurring(stamp(parsed.recurring));
       if (Array.isArray(parsed.quickTags)) setQuickTags(parsed.quickTags);
       if (parsed.userName) setUserName(parsed.userName);
       return true;
@@ -965,25 +984,29 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Auto-push bookkeeping: local edits mark the store dirty; applying cloud data does not
+  const dirtyRef = useRef(false);
+  const changeCountRef = useRef(0);
+  const suppressDirtyRef = useRef(false);
+
+  /** Apply an already-merged snapshot (tombstones already purged by mergeSnapshots). */
   const applyMergedData = useCallback((data: any) => {
     if (!data || typeof data !== 'object') return;
-    let combinedDeleted = deletedIds;
+    suppressDirtyRef.current = true;
+
     if (Array.isArray(data.deletedIds)) {
-      const mergedDel = Array.from(new Set([...deletedIds, ...data.deletedIds]));
-      setDeletedIds(mergedDel);
-      combinedDeleted = mergedDel;
+      setDeletedIds(data.deletedIds);
       try {
-        localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(mergedDel));
+        localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(data.deletedIds));
       } catch (e) {}
     }
-    const delSet = new Set(combinedDeleted);
-
-    if (Array.isArray(data.transactions)) setTransactions(data.transactions.filter((t: any) => !delSet.has(t.id)));
-    if (Array.isArray(data.accounts)) setAccounts(data.accounts.filter((a: any) => !delSet.has(a.id)));
-    if (Array.isArray(data.cards)) setCards(data.cards.filter((c: any) => !delSet.has(c.id)));
-    if (Array.isArray(data.categories)) setCategories(data.categories.filter((c: any) => !delSet.has(c.id)));
+    const txs: Transaction[] = Array.isArray(data.transactions) ? data.transactions : stateRef.current.transactions;
+    setTransactions(txs);
+    if (Array.isArray(data.accounts)) setAccounts(withOpeningBalances(data.accounts, txs));
+    if (Array.isArray(data.cards)) setCards(data.cards);
+    if (Array.isArray(data.categories)) setCategories(data.categories);
     if (Array.isArray(data.recurring)) {
-      const activeRec = data.recurring.filter((r: any) => !delSet.has(r.id));
+      const activeRec: RecurringRule[] = data.recurring;
       setRecurring(activeRec);
       setTimeout(() => processDueRecurringRules(undefined, activeRec), 50);
     }
@@ -991,114 +1014,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     if (typeof data.userName === 'string' && data.userName) setUserName(data.userName);
     if (typeof data.isBalanceHidden === 'boolean') setIsBalanceHidden(data.isBalanceHidden);
     if (typeof data.selectedAccountId === 'string' && data.selectedAccountId) setSelectedAccountId(data.selectedAccountId);
-
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {
-      console.error('Failed to write mergedData to localStorage:', e);
-    }
-  }, [deletedIds, processDueRecurringRules]);
-
-  const mergeSnapshotsLocally = useCallback((local: BudgetState, cloud: any): BudgetState => {
-    const cloudDeleted: string[] = Array.isArray(cloud.deletedIds) ? cloud.deletedIds : [];
-    const localDeleted: string[] = Array.isArray(local.deletedIds) ? local.deletedIds : deletedIds;
-    const allDeletedIds = new Set<string>([...localDeleted, ...cloudDeleted]);
-
-    // 1. Transactions: union by id, prefer newer timestamp, sort desc by date, purge deleted
-    const txMap = new Map<string, Transaction>();
-    if (Array.isArray(cloud.transactions)) {
-      for (const tx of cloud.transactions) {
-        if (tx && tx.id && !allDeletedIds.has(tx.id)) txMap.set(tx.id, tx);
-      }
-    }
-    if (Array.isArray(local.transactions)) {
-      for (const tx of local.transactions) {
-        if (!tx || !tx.id || allDeletedIds.has(tx.id)) continue;
-        const serverTx = txMap.get(tx.id);
-        if (!serverTx) {
-          txMap.set(tx.id, tx);
-        } else {
-          const localTime = (tx as any).updatedAt || (tx as any).lastModified || tx.createdAt || 0;
-          const serverTime = (serverTx as any).updatedAt || (serverTx as any).lastModified || serverTx.createdAt || 0;
-          if (localTime >= serverTime) {
-            txMap.set(tx.id, { ...serverTx, ...tx });
-          } else {
-            txMap.set(tx.id, { ...tx, ...serverTx });
-          }
-        }
-      }
-    }
-    const mergedTransactions = Array.from(txMap.values())
-      .filter(tx => !allDeletedIds.has(tx.id))
-      .sort((a, b) => {
-        const dateA = new Date(a.date).getTime() || 0;
-        const dateB = new Date(b.date).getTime() || 0;
-        if (dateB !== dateA) return dateB - dateA;
-        return (b.createdAt || 0) - (a.createdAt || 0);
-      });
-
-    const mergeById = <T extends { id: string }>(serverList: any[] = [], clientList: any[] = []): T[] => {
-      const map = new Map<string, any>();
-      if (Array.isArray(serverList)) {
-        for (const item of serverList) {
-          if (item && item.id && !allDeletedIds.has(item.id)) map.set(item.id, item);
-        }
-      }
-      if (Array.isArray(clientList)) {
-        for (const item of clientList) {
-          if (item && item.id && !allDeletedIds.has(item.id)) {
-            const existing = map.get(item.id);
-            map.set(item.id, existing ? { ...existing, ...item } : item);
-          }
-        }
-      }
-      return Array.from(map.values()).filter(item => !allDeletedIds.has(item.id));
-    };
-
-    const mergedAccounts = mergeById<Account>(cloud.accounts, local.accounts);
-
-    // Cards: Local's card deletions take priority, and any deleted card is purged
-    let mergedCards: CreditCard[] = [];
-    if (Array.isArray(local.cards) && local.cards.length > 0) {
-      const localCardIds = new Set(local.cards.map(c => c.id));
-      mergedCards = mergeById<CreditCard>(cloud.cards, local.cards).filter(c => localCardIds.has(c.id) && !allDeletedIds.has(c.id));
-    } else {
-      mergedCards = (cloud.cards || []).filter((c: any) => !allDeletedIds.has(c.id));
-    }
-
-    const mergedCategories = mergeById<CategoryItem>(cloud.categories, local.categories);
-
-    // Recurring: Local's recurring deletions take priority, and any deleted rule is purged
-    let mergedRecurring: RecurringRule[] = [];
-    if (Array.isArray(local.recurring)) {
-      const localRecIds = new Set(local.recurring.map(r => r.id));
-      mergedRecurring = mergeById<RecurringRule>(cloud.recurring, local.recurring).filter(r => localRecIds.has(r.id) && !allDeletedIds.has(r.id));
-    } else {
-      mergedRecurring = (cloud.recurring || []).filter((r: any) => !allDeletedIds.has(r.id));
-    }
-
-    const serverTags = Array.isArray(cloud.quickTags) ? cloud.quickTags : [];
-    const clientTags = Array.isArray(local.quickTags) ? local.quickTags : [];
-    const mergedQuickTags = Array.from(
-      new Set(
-        [...serverTags, ...clientTags]
-          .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-          .map((t) => t.trim())
-      )
-    );
-
-    return {
-      transactions: mergedTransactions.length > 0 ? mergedTransactions : local.transactions,
-      accounts: mergedAccounts.length > 0 ? mergedAccounts : local.accounts,
-      cards: mergedCards.length > 0 ? mergedCards : local.cards,
-      categories: mergedCategories.length > 0 ? mergedCategories : local.categories,
-      recurring: mergedRecurring.length > 0 ? mergedRecurring : local.recurring,
-      quickTags: mergedQuickTags.length > 0 ? mergedQuickTags : local.quickTags,
-      userName: local.userName || cloud.userName || 'Darryl',
-      isBalanceHidden: typeof local.isBalanceHidden === 'boolean' ? local.isBalanceHidden : (cloud.isBalanceHidden ?? false),
-      selectedAccountId: local.selectedAccountId || cloud.selectedAccountId || 'acc-main',
-    };
-  }, []);
+  }, [processDueRecurringRules]);
 
   const isSyncingRef = useRef(false);
 
@@ -1136,10 +1052,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       if (direction === 'pull') {
         const res = await client.query(api.sync.pull, { pin });
         if (res && res.found && res.data) {
-          const cloudParsed = JSON.parse(res.data);
-          const currentSnapshot = stateRef.current;
-          const merged = mergeSnapshotsLocally(currentSnapshot, cloudParsed);
-          applyMergedData(merged);
+          applyMergedData(mergeSnapshots(JSON.parse(res.data), stateRef.current));
           const syncTime = res.lastSyncedAt || Date.now();
           setLastSyncedAt(syncTime);
           try {
@@ -1151,16 +1064,17 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       }
 
       // direction === 'push' or 'both'
-      const clientSnapshot = stateRef.current;
+      const sentChangeCount = changeCountRef.current;
       const res = await client.mutation(api.sync.push, {
         pin,
-        clientData: JSON.stringify(clientSnapshot),
+        clientData: JSON.stringify(stateRef.current),
         clientTimestamp: Date.now(),
       });
 
       if (res && res.mergedData) {
-        const merged = JSON.parse(res.mergedData);
-        applyMergedData(merged);
+        // Merge against the *current* local state: edits made while the push was in flight survive
+        applyMergedData(mergeSnapshots(JSON.parse(res.mergedData), stateRef.current));
+        if (changeCountRef.current === sentChangeCount) dirtyRef.current = false;
         const syncTime = res.serverTime || Date.now();
         setLastSyncedAt(syncTime);
         try {
@@ -1180,7 +1094,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
       setIsSyncing(false);
       isSyncingRef.current = false;
     }
-  }, [getMasterPin, mergeSnapshotsLocally, applyMergedData]);
+  }, [getMasterPin, applyMergedData]);
 
   syncWithCloudRef.current = syncWithCloud;
 
@@ -1225,27 +1139,43 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isLoaded, isUnlocked, syncWithCloud]);
 
-  // 2-hour periodic auto push when online
+  // Auto-push: debounce 2s after any local change; retry every minute while dirty; flush on backgrounding
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (suppressDirtyRef.current) {
+      suppressDirtyRef.current = false;
+    } else {
+      dirtyRef.current = true;
+      changeCountRef.current++;
+    }
+    if (!isUnlocked || !dirtyRef.current) return;
+    const timer = setTimeout(() => syncWithCloudRef.current?.('push'), 2000);
+    return () => clearTimeout(timer);
+  }, [isLoaded, isUnlocked, transactions, accounts, cards, categories, recurring, quickTags, userName, deletedIds]);
+
   useEffect(() => {
     if (!isLoaded || !isUnlocked) return;
-
-    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
-    const interval = setInterval(() => {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-      const lastSync = lastSyncedAt || 0;
-      if (Date.now() - lastSync >= TWO_HOURS_MS) {
-        syncWithCloud('push');
-      }
-    }, 60 * 1000); // check every minute
-
-    return () => clearInterval(interval);
-  }, [isLoaded, isUnlocked, lastSyncedAt, syncWithCloud]);
+    const pushIfDirty = () => {
+      if (dirtyRef.current) syncWithCloudRef.current?.('push');
+    };
+    const interval = setInterval(pushIfDirty, 60 * 1000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') pushIfDirty();
+    };
+    window.addEventListener('online', pushIfDirty);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', pushIfDirty);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [isLoaded, isUnlocked]);
 
   const resetToSampleData = loadDemoData;
 
   const value: BudgetContextType = {
     transactions,
-    accounts,
+    accounts: accountsWithBalance,
     cards,
     categories,
     recurring,

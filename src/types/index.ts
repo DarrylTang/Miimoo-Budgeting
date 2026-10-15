@@ -12,6 +12,7 @@ export interface Transaction {
   memo: string;
   tags?: string[];
   createdAt: number;
+  updatedAt?: number; // last edit time; newer edit wins when syncing
 }
 
 export type CardColorTheme = 'obsidian' | 'coral' | 'emerald' | 'ocean' | 'purple';
@@ -30,6 +31,7 @@ export interface CreditCard {
   billingCycleDay?: number;
   rewardCategories: string[]; // e.g. ["Food", "Shopping", "Entertainment"]
   isDefault: boolean;
+  updatedAt?: number;
 }
 
 export type AccountType = 'local' | 'overseas';
@@ -39,9 +41,11 @@ export interface Account {
   name: string;
   type: AccountType;
   currency: string;
-  balance: number;
+  balance: number; // derived: openingBalance + net of this account's transactions
+  openingBalance?: number;
   isDefault?: boolean;
   color?: string;
+  updatedAt?: number;
 }
 
 export interface RecurringRule {
@@ -58,6 +62,7 @@ export interface RecurringRule {
   weekday?: string; // 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
   dayOfWeek?: string; // alias
   isActive: boolean;
+  updatedAt?: number;
 }
 
 export interface CategoryItem {
@@ -67,6 +72,7 @@ export interface CategoryItem {
   color: string; // Hex color for icon/accent
   bgColor: string; // Hex color for icon background
   type: 'expense' | 'income' | 'both';
+  updatedAt?: number;
 }
 
 export interface MonthSummary {
