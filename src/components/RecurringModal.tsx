@@ -154,7 +154,7 @@ export function RecurringModal({ isOpen, onClose }: RecurringModalProps) {
       />
 
       {/* Modal Box */}
-      <div className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+      <div className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl z-10 max-h-sheet flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
         {/* Header */}
         <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-gray-100">
           <button

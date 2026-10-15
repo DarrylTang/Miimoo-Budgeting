@@ -117,7 +117,7 @@ export function SidebarDrawer({
       <div className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl z-10 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-left duration-200">
         <div>
           {/* Drawer Header with Close */}
-          <div className="p-5 pb-3 flex items-center justify-between border-b border-gray-100">
+          <div className="p-5 pb-3 pt-[calc(env(safe-area-inset-top)+1.25rem)] flex items-center justify-between border-b border-gray-100">
             <span className="text-xs font-bold uppercase tracking-wider text-[#A0AEC0]">
               Menu & Settings
             </span>

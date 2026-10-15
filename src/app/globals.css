@@ -67,3 +67,8 @@ body {
 .card-shadow-elevated {
   box-shadow: 0 10px 30px -4px rgba(244, 108, 108, 0.18), 0 4px 10px -2px rgba(0, 0, 0, 0.04);
 }
+
+/* Bottom sheets: cap to the visible viewport minus the status bar / Dynamic Island so the header (close X) stays visible */
+.max-h-sheet {
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 1rem);
+}
