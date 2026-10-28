@@ -19,10 +19,12 @@ import {
   Repeat,
   Sparkles,
   Check,
+  PiggyBank,
 } from 'lucide-react';
 import { useBudget } from '@/lib/store';
 import { CategoryIcon } from '@/components/CategoryIcon';
 import { Transaction } from '@/types';
+import { budgetForMonth, budgetSpent } from '@/lib/budget';
 
 interface HomeDashboardProps {
   onOpenNewEntry: () => void;
@@ -69,6 +71,8 @@ export function HomeDashboard({
     setSelectedAccountId,
     isBalanceHidden,
     toggleBalanceHidden,
+    monthlyBudget,
+    setBudget,
   } = useBudget();
 
   // Current viewed month state: dynamic based on current date
@@ -381,6 +385,21 @@ export function HomeDashboard({
     };
   }, [displayTransactions]);
 
+  // Monthly budget: viewed month, all accounts, ignores search/filters
+  const viewedMonth = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+  const budget = budgetForMonth(monthlyBudget, viewedMonth);
+  const budgetUsed = useMemo(() => budgetSpent(transactions, viewedMonth), [transactions, viewedMonth]);
+  const budgetLeft = budget - budgetUsed;
+  const [isEditingBudget, setIsEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState('');
+  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const saveBudget = () => {
+    const amount = parseFloat(budgetInput);
+    if (!isNaN(amount) && amount >= 0) setBudget(viewedMonth, amount);
+    setIsEditingBudget(false);
+  };
+
   // Group transactions by date
   const groupedByDate = useMemo(() => {
     const groups: { [dateStr: string]: { date: string; items: Transaction[]; total: number } } = {};
@@ -680,6 +699,79 @@ export function HomeDashboard({
                   })}`}
             </span>
           </div>
+        </div>
+
+        {/* Monthly Budget */}
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          {isEditingBudget ? (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveBudget();
+              }}
+            >
+              <PiggyBank className="w-4 h-4 text-[#F46C6C] shrink-0" />
+              <span className="text-[11px] font-semibold text-[#718096] shrink-0">Budget from {monthNames[currentMonth]}: $</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                autoFocus
+                value={budgetInput}
+                onChange={(e) => setBudgetInput(e.target.value)}
+                className="flex-1 min-w-0 text-xs font-semibold text-[#2D3748] bg-white border border-gray-200 rounded-xl px-2 py-1 outline-hidden focus:border-[#FF7676]"
+              />
+              <button type="submit" aria-label="Save budget" className="w-7 h-7 rounded-full flex items-center justify-center text-[#38A169] hover:bg-gray-100">
+                <Check className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={() => setIsEditingBudget(false)} aria-label="Cancel" className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold tracking-tight text-[#718096] flex items-center gap-1.5">
+                  <PiggyBank className="w-3.5 h-3.5" />
+                  {budget > 0 ? (
+                    isBalanceHidden ? (
+                      'Budget $ •••••'
+                    ) : (
+                      <>
+                        <span className={`font-bold ${budgetLeft >= 0 ? 'text-[#38A169]' : 'text-[#E53E3E]'}`}>
+                          ${fmt(Math.abs(budgetLeft))} {budgetLeft >= 0 ? 'left' : 'over'}
+                        </span>
+                        <span>of ${fmt(budget)}</span>
+                      </>
+                    )
+                  ) : (
+                    'No monthly budget set'
+                  )}
+                </span>
+                <button
+                  onClick={() => {
+                    setBudgetInput(budget > 0 ? String(budget) : '');
+                    setIsEditingBudget(true);
+                  }}
+                  aria-label={budget > 0 ? 'Edit budget' : 'Set budget'}
+                  className="h-7 px-2 rounded-full flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-[#2D3748] hover:bg-gray-100 transition-colors"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  {budget > 0 ? '' : 'Set budget'}
+                </button>
+              </div>
+              {budget > 0 && (
+                <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${budgetLeft >= 0 ? 'bg-[#6EC5B8]' : 'bg-[#E53E3E]'}`}
+                    style={{ width: `${Math.min(100, (budgetUsed / budget) * 100)}%` }}
+                  />
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -1079,6 +1171,11 @@ export function HomeDashboard({
                                       {tx.category}
                                     </span>
                                   </>
+                                )}
+                                {tx.excludeFromBudget && tx.type === 'expense' && (
+                                  <span className="text-[9px] font-bold px-1.5 rounded-sm bg-gray-100 text-gray-400">
+                                    No budget
+                                  </span>
                                 )}
                               </div>
                             </div>

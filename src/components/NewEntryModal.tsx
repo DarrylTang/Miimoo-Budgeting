@@ -74,6 +74,7 @@ export function NewEntryModal({
   const [toAccountId, setToAccountId] = useState(accounts[1]?.id || 'acc-overseas');
   const [dateStr, setDateStr] = useState(getTodayDateStr);
   const [memo, setMemo] = useState('');
+  const [excludeFromBudget, setExcludeFromBudget] = useState(false);
 
   // Calculator state
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
@@ -119,6 +120,7 @@ export function NewEntryModal({
       }
       setDateStr(editingTransaction.date);
       setMemo(editingTransaction.memo || '');
+      setExcludeFromBudget(!!editingTransaction.excludeFromBudget);
       setIsCalculatorOpen(false);
       setCalcExpression('');
       setCalcPreview(null);
@@ -264,6 +266,7 @@ export function NewEntryModal({
         toAccountId: undefined,
         date: dateStr,
         memo,
+        excludeFromBudget,
       });
     } else {
       addTransaction({
@@ -884,6 +887,23 @@ export function NewEntryModal({
                 className="flex-1 text-xs font-semibold text-[#2D3748] bg-white border border-gray-200 rounded-xl px-3 py-1.5 outline-hidden focus:border-[#FF7676]"
               />
             </div>
+
+            {/* Exclude from monthly budget (edit only) */}
+            {editingTransaction && type === 'expense' && (
+              <div className="pt-1 border-t border-gray-200/60 flex items-center justify-between">
+                <span className="text-xs font-bold text-[#718096]">Exclude from budget</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={excludeFromBudget}
+                  aria-label="Exclude from budget"
+                  onClick={() => setExcludeFromBudget((v) => !v)}
+                  className={`w-9 h-5 rounded-full p-0.5 transition-colors ${excludeFromBudget ? 'bg-[#FF7676]' : 'bg-gray-300'}`}
+                >
+                  <span className={`block w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${excludeFromBudget ? 'translate-x-4' : ''}`} />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Quick Memo Tag Chips */}

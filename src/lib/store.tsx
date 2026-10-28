@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, createContext, useContext, useRef } from 'react';
-import { Transaction, Account, RecurringRule, CategoryItem, CreditCard, CardColorTheme } from '@/types';
+import { Transaction, Account, RecurringRule, CategoryItem, CreditCard, CardColorTheme, MonthlyBudget } from '@/types';
 import { getConvexClient } from '@/lib/convexClient';
 import { api } from '../../convex/_generated/api';
 import { mergeSnapshots } from '../../convex/syncMerge';
+import { EMPTY_BUDGET, setBudgetFrom } from '@/lib/budget';
 
 /**
  * Returns current date formatted as YYYY-MM-DD in user's local timezone.
@@ -272,6 +273,7 @@ interface BudgetState {
   isBalanceHidden: boolean;
   selectedAccountId: string; // 'all' or specific account id
   userName: string;
+  monthlyBudget: MonthlyBudget;
   deletedIds?: string[];
 }
 
@@ -306,6 +308,7 @@ interface BudgetContextType extends BudgetState {
   toggleBalanceHidden: () => void;
   setSelectedAccountId: (id: string) => void;
   setUserName: (name: string) => void;
+  setBudget: (month: string, amount: number) => void;
   exportJSON: () => void;
   exportCSV: () => void;
   importJSON: (jsonData: string) => boolean;
@@ -326,6 +329,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [hasCustomMasterPin, setHasCustomMasterPin] = useState(false);
   const [userName, setUserName] = useState('Darryl');
+  const [monthlyBudget, setMonthlyBudget] = useState<MonthlyBudget>(EMPTY_BUDGET);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState('acc-main');
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
@@ -353,6 +357,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     isBalanceHidden,
     selectedAccountId,
     userName,
+    monthlyBudget,
     deletedIds,
   });
 
@@ -366,6 +371,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     isBalanceHidden,
     selectedAccountId,
     userName,
+    monthlyBudget,
     deletedIds,
   };
 
@@ -429,6 +435,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(parsed.recurring)) setRecurring(stampLegacy(parsed.recurring));
         if (parsed.quickTags) setQuickTags(parsed.quickTags);
         if (parsed.userName) setUserName(parsed.userName);
+        if (parsed.monthlyBudget?.amounts) setMonthlyBudget(parsed.monthlyBudget);
         if (typeof parsed.isBalanceHidden === 'boolean') setIsBalanceHidden(parsed.isBalanceHidden);
         if (parsed.selectedAccountId) setSelectedAccountId(parsed.selectedAccountId);
       }
@@ -471,13 +478,14 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
         isBalanceHidden,
         selectedAccountId,
         userName,
+        monthlyBudget,
         deletedIds,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
     } catch (e) {
       console.error('Error saving budget data to localStorage:', e);
     }
-  }, [isLoaded, transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName, deletedIds]);
+  }, [isLoaded, transactions, accounts, cards, categories, recurring, quickTags, isBalanceHidden, selectedAccountId, userName, monthlyBudget, deletedIds]);
 
   const processDueRecurringRules = useCallback((currentDateOverride?: string, rulesOverride?: RecurringRule[]): { appliedCount: number; appliedTitles: string[] } => {
     const todayStr = currentDateOverride || getLocalDateString();
@@ -905,6 +913,10 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     setCategories(DEFAULT_CATEGORIES);
   }, []);
 
+  const setBudget = useCallback((month: string, amount: number) => {
+    setMonthlyBudget(prev => setBudgetFrom(prev, month, amount));
+  }, []);
+
   const toggleBalanceHidden = useCallback(() => {
     setIsBalanceHidden(prev => !prev);
   }, []);
@@ -1012,6 +1024,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     }
     if (Array.isArray(data.quickTags)) setQuickTags(data.quickTags);
     if (typeof data.userName === 'string' && data.userName) setUserName(data.userName);
+    if (data.monthlyBudget?.amounts) setMonthlyBudget(data.monthlyBudget);
     if (typeof data.isBalanceHidden === 'boolean') setIsBalanceHidden(data.isBalanceHidden);
     if (typeof data.selectedAccountId === 'string' && data.selectedAccountId) setSelectedAccountId(data.selectedAccountId);
   }, [processDueRecurringRules]);
@@ -1151,7 +1164,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     if (!isUnlocked || !dirtyRef.current) return;
     const timer = setTimeout(() => syncWithCloudRef.current?.('push'), 2000);
     return () => clearTimeout(timer);
-  }, [isLoaded, isUnlocked, transactions, accounts, cards, categories, recurring, quickTags, userName, deletedIds]);
+  }, [isLoaded, isUnlocked, transactions, accounts, cards, categories, recurring, quickTags, userName, monthlyBudget, deletedIds]);
 
   useEffect(() => {
     if (!isLoaded || !isUnlocked) return;
@@ -1183,6 +1196,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     isBalanceHidden,
     selectedAccountId,
     userName,
+    monthlyBudget,
     isUnlocked,
     unlockApp,
     lockApp,
@@ -1213,6 +1227,7 @@ export function BudgetProvider({ children }: { children: React.ReactNode }) {
     toggleBalanceHidden,
     setSelectedAccountId,
     setUserName,
+    setBudget,
     exportJSON,
     exportCSV,
     importJSON,

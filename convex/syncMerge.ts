@@ -9,6 +9,7 @@
  *   Wholesale, not field-spread, so clearing a field (e.g. removing a card) sticks.
  * - Recurring rules always keep the furthest-advanced nextDate, since processing a
  *   rule advances nextDate without counting as an edit.
+ * - monthlyBudget is a single object: newer updatedAt wins (tie -> base).
  * - Per-device prefs (isBalanceHidden, selectedAccountId) come from incoming.
  */
 
@@ -74,6 +75,10 @@ export function mergeSnapshots(base: any, incoming: any): any {
     recurring,
     quickTags,
     userName: incoming.userName || base.userName || "Darryl",
+    monthlyBudget:
+      (incoming.monthlyBudget?.updatedAt ?? 0) > (base.monthlyBudget?.updatedAt ?? 0)
+        ? incoming.monthlyBudget
+        : (base.monthlyBudget ?? incoming.monthlyBudget),
     isBalanceHidden:
       typeof incoming.isBalanceHidden === "boolean" ? incoming.isBalanceHidden : (base.isBalanceHidden ?? false),
     selectedAccountId: incoming.selectedAccountId || base.selectedAccountId || "acc-main",

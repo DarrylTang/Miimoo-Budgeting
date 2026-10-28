@@ -13,6 +13,7 @@ export interface Transaction {
   tags?: string[];
   createdAt: number;
   updatedAt?: number; // last edit time; newer edit wins when syncing
+  excludeFromBudget?: boolean; // still counted in income/expense, just not against the monthly budget
 }
 
 export type CardColorTheme = 'obsidian' | 'coral' | 'emerald' | 'ocean' | 'purple';
@@ -79,4 +80,10 @@ export interface MonthSummary {
   income: number;
   expense: number;
   netIncome: number;
+}
+
+/** Budget amounts keyed by the month they take effect ('YYYY-MM'); each applies until the next key. */
+export interface MonthlyBudget {
+  amounts: Record<string, number>;
+  updatedAt: number;
 }
